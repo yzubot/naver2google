@@ -6,5 +6,5 @@ services:
     startCommand: gunicorn naver2google:app --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
-        value: "3.12"
+        value: "3.12.3"
     plan: free
