@@ -93,13 +93,35 @@ def _coords_from_at_pattern(url: str) -> tuple[float, float] | None:
     return None
 
 
+def _extract_url(text: str) -> str:
+    """Extract a Naver Map URL from pasted text that may contain extra lines.
+
+    Handles share text like:
+        [NAVER 地图]
+        Store Name
+        Address line
+        https://naver.me/XXXXX
+    """
+    m = re.search(r"(https?://(?:naver\.me|map\.naver\.com|m\.map\.naver\.com)\S+)", text)
+    if m:
+        return m.group(1)
+    # Also match nmap:// scheme
+    m = re.search(r"(nmap://\S+)", text)
+    if m:
+        return m.group(1)
+    return text
+
+
 def convert(naver_url: str) -> dict:
     """Main conversion: Naver URL → {lat, lng, name, google_url}."""
-    url = naver_url.strip()
-    if not url:
+    raw = naver_url.strip()
+    if not raw:
         return {"error": "空的輸入"}
 
-    # Step 0: resolve short links
+    # Step 0a: extract URL from multi-line share text
+    url = _extract_url(raw)
+
+    # Step 0b: resolve short links
     if "naver.me/" in url:
         url = _resolve_short_link(url)
 
@@ -171,10 +193,10 @@ h1{font-size:1.4rem;margin-bottom:24px;text-align:center}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
       padding:20px;margin-bottom:16px}
 label{display:block;font-size:.85rem;color:var(--dim);margin-bottom:6px}
-input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);
+textarea{width:100%;padding:10px 12px;border:1px solid var(--border);
       border-radius:8px;background:#0f172a;color:var(--text);font-size:.95rem;
-      outline:none}
-input[type=text]:focus{border-color:var(--blue)}
+      outline:none;resize:vertical;min-height:80px;font-family:inherit}
+textarea:focus{border-color:var(--blue)}
 button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
        font-size:.95rem;font-weight:600;margin-top:12px}
 .btn-convert{background:var(--blue);color:#fff}
@@ -196,9 +218,9 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
 <div class="wrap">
   <h1>Naver Map → Google Maps</h1>
   <div class="card">
-    <label for="url-input">貼上 Naver Map 連結或韓文地址</label>
-    <input type="text" id="url-input"
-           placeholder="https://naver.me/xxxxx 或 韓文地址">
+    <label for="url-input">直接貼上 Naver Map 分享的內容</label>
+    <textarea id="url-input"
+           placeholder="[NAVER 地图]&#10;店名&#10;地址&#10;https://naver.me/xxxxx"></textarea>
     <button class="btn-convert" onclick="doConvert()">轉換</button>
     <div class="loading" id="loading">轉換中...</div>
     <div id="error-area" class="error"></div>
@@ -210,7 +232,7 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
       </a>
     </div>
     <div class="hint">
-      支援格式：naver.me 短網址、map.naver.com 連結、nmap:// 連結、韓文地址
+      直接貼上分享的完整內容即可，會自動擷取網址
     </div>
   </div>
 </div>
