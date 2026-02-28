@@ -1,5 +1,5 @@
-// Naver Map → Google Maps
-// Scriptable 腳本：從 Share Sheet 接收 Naver Map 連結，自動跳轉到 Google Maps
+// Naver Map → Google / Apple Maps
+// Scriptable 腳本：從 Share Sheet 接收 Naver Map 連結，自動跳轉到地圖 app
 //
 // 設定方式：
 // 1. 在 Scriptable app 中建立新腳本，貼上此程式碼
@@ -17,7 +17,7 @@ if (!input && args.shortcutParameter) {
 if (!input) {
   // 如果沒有 Share Sheet 輸入，顯示輸入框
   let alert = new Alert();
-  alert.title = "Naver → Google Maps";
+  alert.title = "Naver → Maps";
   alert.message = "貼上 Naver Map 分享的內容";
   alert.addTextField("Naver Map 連結");
   alert.addAction("轉換");
@@ -64,8 +64,22 @@ try {
     return;
   }
 
-  // 直接打開 Google Maps
-  Safari.open(result.google_url);
+  // 讓使用者選擇地圖 app
+  let choice = new Alert();
+  choice.title = result.name || "Naver Map 轉換";
+  choice.message = result.lat != null
+    ? `${result.lat}, ${result.lng}`
+    : "以文字搜尋";
+  choice.addAction("Google Maps");
+  choice.addAction("Apple Maps");
+  choice.addCancelAction("取消");
+  let picked = await choice.present();
+
+  if (picked === 0) {
+    Safari.open(result.google_url);
+  } else if (picked === 1) {
+    Safari.open(result.apple_url);
+  }
 
 } catch (e) {
   let err = new Alert();

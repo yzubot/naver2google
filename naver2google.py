@@ -1,11 +1,11 @@
-"""Naver Map → Google Maps 轉換器
+"""Naver Map → Google/Apple Maps 轉換器
 
 用法：
     python naver2google.py [--port 8585]
 
 Web UI:  http://<LAN-IP>:8585
-API:     GET /convert?url=NAVER_URL  → JSON
-Redirect: GET /go?url=NAVER_URL      → 302 to Google Maps
+API:     GET /convert?url=NAVER_URL  → JSON (含 google_url + apple_url)
+Redirect: GET /go?url=NAVER_URL[&target=apple]  → 302 to Google/Apple Maps
 """
 
 from __future__ import annotations
@@ -112,8 +112,19 @@ def _extract_url(text: str) -> str:
     return text
 
 
+def _build_result(lat: float, lng: float, name: str) -> dict:
+    """Build result dict with both Google and Apple Maps URLs."""
+    label = quote(name) if name else ""
+    return {
+        "lat": lat, "lng": lng, "name": name,
+        "google_url": f"https://www.google.com/maps?q={lat},{lng}",
+        "apple_url": f"https://maps.apple.com/?ll={lat},{lng}&q={label}" if name
+                     else f"https://maps.apple.com/?ll={lat},{lng}&q={lat},{lng}",
+    }
+
+
 def convert(naver_url: str) -> dict:
-    """Main conversion: Naver URL → {lat, lng, name, google_url}."""
+    """Main conversion: Naver URL → {lat, lng, name, google_url, apple_url}."""
     raw = naver_url.strip()
     if not raw:
         return {"error": "空的輸入"}
@@ -135,10 +146,7 @@ def convert(naver_url: str) -> dict:
             result = _coords_from_place_api(place_id)
             if result:
                 name = result[2]
-        return {
-            "lat": lat, "lng": lng, "name": name,
-            "google_url": f"https://www.google.com/maps?q={lat},{lng}",
-        }
+        return _build_result(lat, lng, name)
 
     # Step 2: try Place ID → API
     place_id = _extract_place_id(url)
@@ -146,25 +154,20 @@ def convert(naver_url: str) -> dict:
         result = _coords_from_place_api(place_id)
         if result:
             lat, lng, name = result
-            return {
-                "lat": lat, "lng": lng, "name": name,
-                "google_url": f"https://www.google.com/maps?q={lat},{lng}",
-            }
+            return _build_result(lat, lng, name)
 
     # Step 3: try @lat,lng pattern
     coords = _coords_from_at_pattern(url)
     if coords:
         lat, lng = coords
-        return {
-            "lat": lat, "lng": lng, "name": "",
-            "google_url": f"https://www.google.com/maps?q={lat},{lng}",
-        }
+        return _build_result(lat, lng, "")
 
-    # Step 4: fallback — pass as Google Maps search query
+    # Step 4: fallback — pass as search query
     query = unquote(url)
     return {
         "lat": None, "lng": None, "name": query,
         "google_url": f"https://www.google.com/maps/search/{quote(query)}",
+        "apple_url": f"https://maps.apple.com/?q={quote(query)}",
     }
 
 
@@ -180,7 +183,7 @@ INDEX_HTML = """\
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Naver Map → Google Maps</title>
+<title>Naver Map → Google / Apple Maps</title>
 <style>
 :root{--bg:#0f172a;--card:#1e293b;--border:#334155;--text:#e2e8f0;
       --dim:#94a3b8;--green:#22c55e;--blue:#3b82f6;--red:#ef4444}
@@ -201,9 +204,11 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
        font-size:.95rem;font-weight:600;margin-top:12px}
 .btn-convert{background:var(--blue);color:#fff}
 .btn-convert:hover{opacity:.9}
-.btn-open{background:var(--green);color:#fff;text-decoration:none;
+.btn-open{color:#fff;text-decoration:none;
           display:block;text-align:center;padding:10px;border-radius:8px;
           font-weight:600;margin-top:10px}
+.btn-google{background:var(--green)}
+.btn-apple{background:#007AFF}
 .result{margin-top:16px}
 .result .name{font-size:1.1rem;font-weight:700;margin-bottom:6px}
 .result .coords{font-size:.85rem;color:var(--dim);margin-bottom:10px}
@@ -216,7 +221,7 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
 </head>
 <body>
 <div class="wrap">
-  <h1>Naver Map → Google Maps</h1>
+  <h1>Naver Map → Google / Apple Maps</h1>
   <div class="card">
     <label for="url-input">直接貼上 Naver Map 分享的內容</label>
     <textarea id="url-input"
@@ -227,8 +232,11 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
     <div id="result-area" class="result">
       <div class="name" id="r-name"></div>
       <div class="coords" id="r-coords"></div>
-      <a class="btn-open" id="r-link" href="#" target="_blank">
+      <a class="btn-open btn-google" id="r-link" href="#" target="_blank">
         在 Google Maps 開啟
+      </a>
+      <a class="btn-open btn-apple" id="r-apple" href="#" target="_blank">
+        在 Apple Maps 開啟
       </a>
     </div>
     <div class="hint">
@@ -253,6 +261,7 @@ async function doConvert(){
     document.getElementById('r-coords').textContent=
       d.lat!=null?`${d.lat}, ${d.lng}`:'(以文字搜尋)';
     document.getElementById('r-link').href=d.google_url;
+    document.getElementById('r-apple').href=d.apple_url;
     ra.style.display='block';
   }catch(e){
     ld.style.display='none';
@@ -295,8 +304,11 @@ def api_go():
     url = request.args.get("url", "").strip()
     if not url:
         return "缺少 url 參數", 400
+    target = request.args.get("target", "google").strip().lower()
     try:
         result = convert(url)
+        if target == "apple":
+            return redirect(result["apple_url"])
         return redirect(result["google_url"])
     except Exception as e:
         return f"Error: {e}", 502
