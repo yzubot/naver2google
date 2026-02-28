@@ -36,8 +36,19 @@ if (!input.trim()) {
   return;
 }
 
+// 從多行分享文字中擷取 URL
+function extractUrl(text) {
+  let m = text.match(/https?:\/\/(?:naver\.me|map\.naver\.com|m\.map\.naver\.com)\S+/);
+  if (m) return m[0];
+  m = text.match(/nmap:\/\/\S+/);
+  if (m) return m[0];
+  return text.trim();
+}
+
+let cleanInput = extractUrl(input);
+
 // 呼叫 API
-let url = `${API}/convert?url=${encodeURIComponent(input)}`;
+let url = `${API}/convert?url=${encodeURIComponent(cleanInput)}`;
 let req = new Request(url);
 req.timeoutInterval = 15;
 
