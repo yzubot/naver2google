@@ -223,9 +223,9 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
 <div class="wrap">
   <h1>Naver Map → Google / Apple Maps</h1>
   <div class="card">
-    <label for="url-input">直接貼上 Naver Map 分享的內容</label>
+    <label for="url-input">貼上 Naver Map 連結、或直接輸入地址</label>
     <textarea id="url-input"
-           placeholder="[NAVER 地图]&#10;店名&#10;地址&#10;https://naver.me/xxxxx"></textarea>
+           placeholder="https://naver.me/xxxxx&#10;或直接輸入地址：&#10;首尔特别市 中区 苎洞二街 89"></textarea>
     <button class="btn-convert" onclick="doConvert()">轉換</button>
     <div class="loading" id="loading">轉換中...</div>
     <div id="error-area" class="error"></div>
@@ -240,7 +240,7 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
       </a>
     </div>
     <div class="hint">
-      直接貼上分享的完整內容即可，會自動擷取網址
+      支援：Naver Map 連結、分享的完整內容、中/韓/英文地址
     </div>
   </div>
 </div>

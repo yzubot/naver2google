@@ -8,11 +8,13 @@ Naver Map 網址轉換器 — 將韓國 Naver 地圖連結轉換為 Google Maps 
 
 ## 功能
 
-- 支援多種 Naver Map URL 格式：
+- 支援多種輸入格式：
   - `naver.me/` 短連結
   - `map.naver.com/p/` 完整連結
   - `nmap://` scheme
-  - 純韓文地址（fallback 搜尋）
+  - 中文地址（例：`首尔特别市 中区 苎洞二街 89`）
+  - 韓文地址（例：`서울특별시 중구 저동2가 89`）
+  - 英文地址
 - 自動解析 Naver Map 分享的多行文字，擷取網址
 - 同時產生 Google Maps 和 Apple Maps 連結
 - 深色主題 Web UI，支援手機操作
