@@ -268,6 +268,11 @@ document.getElementById('url-input').addEventListener('keydown',function(e){
 """
 
 
+@app.route("/health")
+def health():
+    return "ok"
+
+
 @app.route("/")
 def index():
     return Response(INDEX_HTML, content_type="text/html; charset=utf-8")
