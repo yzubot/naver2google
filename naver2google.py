@@ -162,6 +162,16 @@ def convert(naver_url: str) -> dict:
         lat, lng = coords
         return _build_result(lat, lng, "")
 
+    # Step 3.5: address entry URL (/entry/address/CODE,CODE,address)
+    addr_match = re.search(r"/entry/address/[^,]+,[^,]+,(.+?)(?:\?|$)", url)
+    if addr_match:
+        query = unquote(addr_match.group(1)).strip()
+        return {
+            "lat": None, "lng": None, "name": query,
+            "google_url": f"https://www.google.com/maps/search/{quote(query)}",
+            "apple_url": f"https://maps.apple.com/?q={quote(query)}",
+        }
+
     # Step 4: fallback — pass as search query
     query = unquote(url)
     return {
