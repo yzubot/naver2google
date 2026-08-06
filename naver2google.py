@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import argparse
 import re
+from functools import lru_cache
 from urllib.parse import urlparse, parse_qs, quote, unquote
 
 import requests as http_client
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from flask import Flask, request, jsonify, redirect, Response
 
 # ---------------------------------------------------------------------------
@@ -32,16 +35,47 @@ NAVER_HEADERS = {
 }
 
 
+class NaverUnavailable(RuntimeError):
+    """Raised when Naver itself is unreachable / rate-limiting (vs. a link we
+    simply can't parse) — lets the API return a distinct 503 instead of 502."""
+
+
+# Shared session: connection pooling + automatic retry with backoff on the
+# transient statuses Naver's internal API throws under load.
+def _make_session() -> http_client.Session:
+    s = http_client.Session()
+    s.headers.update(NAVER_HEADERS)
+    retry = Retry(
+        total=3, connect=2, read=2, backoff_factor=0.4,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET", "HEAD"]),
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+    return s
+
+
+SESSION = _make_session()
+
+
 # ---------------------------------------------------------------------------
 # Coordinate extraction
 # ---------------------------------------------------------------------------
 
 def _resolve_short_link(url: str) -> str:
-    """Follow naver.me redirect to get the full URL."""
-    resp = http_client.head(
-        url, allow_redirects=True, timeout=10, headers=NAVER_HEADERS,
-    )
-    return resp.url
+    """Follow naver.me redirect to get the full URL.
+
+    Uses GET (not HEAD): some naver.me short links return 405/no Location on
+    HEAD but redirect correctly on GET. stream=True avoids downloading the body.
+    """
+    try:
+        resp = SESSION.get(url, allow_redirects=True, timeout=10, stream=True)
+        final = resp.url
+        resp.close()
+        return final
+    except http_client.RequestException as exc:
+        raise NaverUnavailable(f"無法解析短連結: {exc}") from exc
 
 
 def _coords_from_params(url: str) -> tuple[float, float] | None:
@@ -63,26 +97,31 @@ def _extract_place_id(url: str) -> str | None:
 
 
 def _coords_from_place_api(place_id: str) -> tuple[float, float, str] | None:
-    """Call Naver Place Summary API to get coordinates and name."""
+    """Call Naver Place Summary API to get coordinates and name.
+
+    Retries transient failures via the session adapter. A 403/429 (Naver
+    blocking us) is surfaced as NaverUnavailable so the caller can 503; a clean
+    200-with-no-coords just returns None (fall through to other strategies)."""
     try:
-        resp = http_client.get(
-            PLACE_API.format(place_id),
-            headers=NAVER_HEADERS,
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        detail = data.get("data", {}).get("placeDetail", {})
-        coord = detail.get("coordinate", {})
-        lat = coord.get("latitude")
-        lng = coord.get("longitude")
-        if lat is None or lng is None:
-            return None
-        name = detail.get("name", "")
-        return float(lat), float(lng), name
-    except Exception:
+        resp = SESSION.get(PLACE_API.format(place_id), timeout=10)
+    except http_client.RequestException as exc:
+        raise NaverUnavailable(f"Place API 連線失敗: {exc}") from exc
+    if resp.status_code in (403, 429):
+        raise NaverUnavailable(f"Naver 擋下請求 (HTTP {resp.status_code})，稍後再試")
+    if resp.status_code != 200:
         return None
+    try:
+        data = resp.json()
+    except ValueError:
+        return None
+    detail = data.get("data", {}).get("placeDetail", {})
+    coord = detail.get("coordinate", {})
+    lat = coord.get("latitude")
+    lng = coord.get("longitude")
+    if lat is None or lng is None:
+        return None
+    name = detail.get("name", "")
+    return float(lat), float(lng), name
 
 
 def _coords_from_at_pattern(url: str) -> tuple[float, float] | None:
@@ -113,18 +152,33 @@ def _extract_url(text: str) -> str:
 
 
 def _build_result(lat: float, lng: float, name: str) -> dict:
-    """Build result dict with both Google and Apple Maps URLs."""
-    label = quote(name) if name else ""
+    """Build result dict with both Google and Apple Maps URLs.
+
+    When we have a name, use Google's `/place/<name>/@lat,lng` form so the pin
+    carries the place label *and* sits on the exact coordinates; otherwise fall
+    back to a bare coordinate pin.
+    """
+    if name:
+        label = quote(name)
+        google_url = f"https://www.google.com/maps/place/{label}/@{lat},{lng},17z"
+        apple_url = f"https://maps.apple.com/?ll={lat},{lng}&q={label}"
+    else:
+        google_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
+        apple_url = f"https://maps.apple.com/?ll={lat},{lng}&q={lat},{lng}"
     return {
         "lat": lat, "lng": lng, "name": name,
-        "google_url": f"https://www.google.com/maps?q={lat},{lng}",
-        "apple_url": f"https://maps.apple.com/?ll={lat},{lng}&q={label}" if name
-                     else f"https://maps.apple.com/?ll={lat},{lng}&q={lat},{lng}",
+        "google_url": google_url, "apple_url": apple_url,
     }
 
 
+@lru_cache(maxsize=512)
 def convert(naver_url: str) -> dict:
-    """Main conversion: Naver URL → {lat, lng, name, google_url, apple_url}."""
+    """Main conversion: Naver URL → {lat, lng, name, google_url, apple_url}.
+
+    Cached per input (identical link → instant repeat). NaverUnavailable
+    propagates (transient — not cached by lru_cache); unparseable links fall
+    through to a text-search result rather than erroring.
+    """
     raw = naver_url.strip()
     if not raw:
         return {"error": "空的輸入"}
@@ -255,23 +309,49 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
   </div>
 </div>
 <script>
+const LINKRE=/(https?:[/][/](?:naver[.]me|m?[.]?map[.]naver[.]com)\\S+|nmap:[/][/]\\S+)/g;
+function linkLines(text){
+  // one entry per line that contains a Naver link; if none, treat whole box as 1
+  const lines=text.split('\n').map(s=>s.trim()).filter(Boolean);
+  const withLinks=lines.filter(l=>LINKRE.test(l));
+  LINKRE.lastIndex=0;
+  return withLinks.length>=2?withLinks:null;
+}
+function card(d){
+  const name=(d.name||'(無名稱)');
+  const coords=d.lat!=null?`${d.lat}, ${d.lng}`:'(以文字搜尋)';
+  if(d.error) return `<div class="card"><div class="name">⚠️ ${d.input||''}</div>
+    <div class="error" style="display:block">${d.error}</div></div>`;
+  return `<div class="card"><div class="name">${name}</div>
+    <div class="coords">${coords}</div>
+    <a class="btn-open btn-google" target="_blank" href="${d.google_url}">在 Google Maps 開啟</a>
+    <a class="btn-open btn-apple" target="_blank" href="${d.apple_url}">在 Apple Maps 開啟</a></div>`;
+}
 async function doConvert(){
   const input=document.getElementById('url-input').value.trim();
   if(!input)return;
   const ra=document.getElementById('result-area');
   const ea=document.getElementById('error-area');
   const ld=document.getElementById('loading');
+  const multi=linkLines(input);
   ra.style.display='none';ea.style.display='none';ld.style.display='block';
   try{
+    if(multi){ // batch mode
+      const r=await fetch('/convert_batch',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({urls:multi})});
+      const d=await r.json();ld.style.display='none';
+      if(d.error){ea.textContent=d.error;ea.style.display='block';return}
+      ra.innerHTML=`<div class="hint" style="margin:4px 0 10px">共 ${d.count} 筆</div>`
+        +d.results.map(card).join('');
+      ra.style.display='block';return;
+    }
     const r=await fetch('/convert?url='+encodeURIComponent(input));
-    const d=await r.json();
-    ld.style.display='none';
+    const d=await r.json();ld.style.display='none';
     if(d.error){ea.textContent=d.error;ea.style.display='block';return}
-    document.getElementById('r-name').textContent=d.name||'(無名稱)';
-    document.getElementById('r-coords').textContent=
-      d.lat!=null?`${d.lat}, ${d.lng}`:'(以文字搜尋)';
-    document.getElementById('r-link').href=d.google_url;
-    document.getElementById('r-apple').href=d.apple_url;
+    ra.innerHTML=`<div class="name" id="r-name">${d.name||'(無名稱)'}</div>
+      <div class="coords">${d.lat!=null?d.lat+', '+d.lng:'(以文字搜尋)'}</div>
+      <a class="btn-open btn-google" target="_blank" href="${d.google_url}">在 Google Maps 開啟</a>
+      <a class="btn-open btn-apple" target="_blank" href="${d.apple_url}">在 Apple Maps 開啟</a>`;
     ra.style.display='block';
   }catch(e){
     ld.style.display='none';
@@ -279,7 +359,7 @@ async function doConvert(){
   }
 }
 document.getElementById('url-input').addEventListener('keydown',function(e){
-  if(e.key==='Enter')doConvert();
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doConvert();}
 });
 </script>
 </body>
@@ -303,10 +383,33 @@ def api_convert():
     if not url:
         return jsonify({"error": "缺少 url 參數"}), 400
     try:
-        result = convert(url)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
+        return jsonify(convert(url))
+    except NaverUnavailable as e:
+        return jsonify({"error": f"Naver 暫時無法連線：{e}"}), 503
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": f"解析失敗：{e}"}), 502
+
+
+@app.route("/convert_batch", methods=["POST"])
+def api_convert_batch():
+    """Convert many links at once. Body: {"urls": [...]} or newline text.
+    Returns {"results": [{input, ...convert()} | {input, error}]}."""
+    payload = request.get_json(silent=True) or {}
+    urls = payload.get("urls")
+    if urls is None:
+        text = payload.get("text") or request.get_data(as_text=True) or ""
+        urls = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not urls:
+        return jsonify({"error": "沒有可轉換的連結"}), 400
+    out = []
+    for u in urls[:50]:  # cap to protect the free host
+        try:
+            out.append({"input": u, **convert(u)})
+        except NaverUnavailable as e:
+            out.append({"input": u, "error": f"Naver 暫時無法連線：{e}"})
+        except Exception as e:  # noqa: BLE001
+            out.append({"input": u, "error": str(e)})
+    return jsonify({"results": out, "count": len(out)})
 
 
 @app.route("/go")
@@ -317,10 +420,13 @@ def api_go():
     target = request.args.get("target", "google").strip().lower()
     try:
         result = convert(url)
-        if target == "apple":
-            return redirect(result["apple_url"])
-        return redirect(result["google_url"])
-    except Exception as e:
+        if "error" in result:
+            return f"Error: {result['error']}", 422
+        return redirect(result["apple_url"] if target == "apple"
+                        else result["google_url"])
+    except NaverUnavailable as e:
+        return f"Naver 暫時無法連線：{e}", 503
+    except Exception as e:  # noqa: BLE001
         return f"Error: {e}", 502
 
 
