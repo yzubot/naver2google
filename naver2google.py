@@ -14,6 +14,7 @@ Redirect: GET  /go?url=NAVER_URL[&target=apple] → 302 到 Google/Apple Maps
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from functools import lru_cache
 from urllib.parse import urlparse, parse_qs, quote, unquote
@@ -387,22 +388,24 @@ SHORTCUT_HTML = """\
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);
      color:var(--text);min-height:100vh;display:flex;justify-content:center;
-     align-items:flex-start;padding:32px 16px;line-height:1.65}
+     align-items:flex-start;padding:28px 16px;line-height:1.7}
 .wrap{max-width:640px;width:100%}
-h1{font-size:1.35rem;margin-bottom:6px}
-.sub{color:var(--dim);font-size:.9rem;margin-bottom:24px}
+h1{font-size:1.3rem;margin-bottom:6px}
+.sub{color:var(--dim);font-size:.92rem;margin-bottom:22px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
       padding:18px 20px;margin-bottom:16px}
-h2{font-size:1.05rem;margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.num{display:inline-flex;align-items:center;justify-content:center;
-     width:26px;height:26px;border-radius:50%;background:var(--blue);
-     color:#fff;font-size:.85rem;font-weight:700;flex:none}
-ol.steps{list-style:none;counter-reset:s}
-ol.steps>li{counter-increment:s;position:relative;padding-left:34px;
-            margin-bottom:14px;font-size:.95rem}
-ol.steps>li::before{content:counter(s);position:absolute;left:0;top:1px;
-     width:24px;height:24px;border-radius:50%;background:#334155;color:#fff;
-     font-size:.8rem;font-weight:700;display:flex;align-items:center;
+.card.hero{border-color:#2f5133;background:#16241a}
+h2{font-size:1.05rem;margin-bottom:4px}
+.tag{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 8px;
+     border-radius:99px;margin-bottom:10px}
+.tag-a{background:var(--green);color:#04240f}
+.tag-b{background:#334155;color:var(--dim)}
+ol.steps{list-style:none;counter-reset:s;margin-top:12px}
+ol.steps>li{counter-increment:s;position:relative;padding-left:32px;
+            margin-bottom:12px;font-size:.95rem}
+ol.steps>li::before{content:counter(s);position:absolute;left:0;top:3px;
+     width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;
+     font-size:.78rem;font-weight:700;display:flex;align-items:center;
      justify-content:center}
 code{background:#0f172a;border:1px solid var(--border);border-radius:6px;
      padding:2px 6px;font-size:.85em;word-break:break-word;
@@ -411,14 +414,17 @@ pre{background:#0f172a;border:1px solid var(--border);border-radius:8px;
     padding:12px;font-size:.85rem;margin:10px 0;
     white-space:pre-wrap;word-break:break-all;
     font-family:ui-monospace,Menlo,Consolas,monospace}
+.dl{display:block;text-align:center;background:var(--green);color:#04240f;
+    text-decoration:none;font-weight:700;font-size:1rem;padding:13px;
+    border-radius:10px;margin:12px 0 6px}
+.dl.g{background:var(--blue);color:#fff}
 .copy{background:var(--blue);color:#fff;border:none;border-radius:8px;
-      padding:8px 14px;font-size:.85rem;font-weight:600;cursor:pointer;
-      margin-top:6px}
-.note{background:#1c2c1e;border:1px solid #2f5133;border-left:3px solid var(--green);
-      border-radius:8px;padding:12px 14px;font-size:.88rem;margin-top:12px}
-.warn{background:#2c2416;border:1px solid #59461f;border-left:3px solid var(--amber);
-      border-radius:8px;padding:12px 14px;font-size:.88rem;margin-top:12px}
-.dim{color:var(--dim);font-size:.85rem}
+      padding:8px 14px;font-size:.85rem;font-weight:600;cursor:pointer}
+.note{background:#1c2c1e;border-left:3px solid var(--green);
+      border-radius:8px;padding:11px 13px;font-size:.88rem;margin-top:12px}
+.warn{background:#2c2416;border-left:3px solid var(--amber);
+      border-radius:8px;padding:11px 13px;font-size:.88rem;margin-top:12px}
+.dim{color:var(--dim);font-size:.86rem}
 a{color:var(--blue)}
 table{width:100%;border-collapse:collapse;margin-top:10px;font-size:.88rem;
       display:block;overflow-x:auto}
@@ -426,79 +432,76 @@ th,td{border:1px solid var(--border);padding:7px 9px;text-align:left;
       vertical-align:top}
 td:first-child{white-space:nowrap}
 th{background:#0f172a;color:var(--dim);font-weight:600}
+hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
 .back{display:inline-block;margin-top:8px;font-size:.9rem}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>iPhone 捷徑：Naver Map → Apple 地圖</h1>
-  <div class="sub">在 Naver Map App 按「分享」，一鍵用 Apple 地圖打開。整個捷徑只有 <b>2 個動作</b>，建一次約 1 分鐘。</div>
+  <h1>在 Naver Map 按分享，一鍵開 Apple 地圖</h1>
+  <div class="sub">兩種做法，選一個就好。看不懂就用做法 B，它只有<b>一個動作</b>。</div>
 
-  <div class="card">
-    <h2><span class="num">i</span>先看這個</h2>
-    <p class="dim">iCloud 捷徑連結只能由 Apple 裝置產生並上傳，所以這裡不提供現成連結——
-    下面是自己建的步驟。好處是你看得到它做了什麼，也不用開「允許不受信任的捷徑」。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">1</span>建立捷徑</h2>
+  <div class="card hero">
+    <span class="tag tag-a">做法 A ・ 最快</span>
+    <h2>直接下載現成捷徑</h2>
+    <p class="dim">用 <b>iPhone 的 Safari</b> 打開這一頁，然後按下面的按鈕。</p>
+    <a class="dl" href="/dl/naver-to-apple-maps.shortcut">⬇︎ 下載「用 Apple 地圖開啟」</a>
+    <a class="dl g" href="/dl/naver-to-google-maps.shortcut">⬇︎ 下載「用 Google 地圖開啟」</a>
     <ol class="steps">
-      <li>打開「<b>捷徑</b>」App → 右上角 <b>+</b> 新增捷徑</li>
-      <li>點最上方標題 → <b>重新命名</b> 為「<b>用 Apple 地圖開啟</b>」</li>
-      <li>點標題旁的 <b>ⓘ</b>（詳細資訊）→ 打開「<b>在分享表單中顯示</b>」</li>
-      <li>在下方「分享表單類型」只勾 <b>URL</b>（其他取消勾選，這樣只有網址才會跳出來）</li>
+      <li>按上面按鈕 → Safari 會問「要下載嗎」→ 按 <b>下載</b></li>
+      <li>點網址列右邊的 <b>⬇︎</b> → 點剛下載的檔案</li>
+      <li>捷徑 App 會跳出來 → 拉到最下面按 <b>加入捷徑</b></li>
     </ol>
+    <div class="warn"><b>如果按了沒反應／說不能打開：</b>
+    去「設定 → 捷徑」把「<b>允許不受信任的捷徑</b>」打開，再回來按一次。
+    <br><span class="dim">那個開關要先執行過任一個捷徑才會出現。真的找不到就直接用下面的做法 B，一樣快。</span></div>
   </div>
 
+  <hr>
+
   <div class="card">
-    <h2><span class="num">2</span>加入第一個動作：取得 URL 內容</h2>
+    <span class="tag tag-b">做法 B ・ 自己建，只有 1 個動作</span>
+    <h2>手動建立（不需要開任何設定）</h2>
     <ol class="steps">
-      <li>搜尋動作「<b>取得 URL 的內容</b>」並加入</li>
-      <li>URL 欄位貼上：
-        <pre id="ep">https://naver2google.onrender.com/apple</pre>
-        <button class="copy" onclick="cp('ep',this)">複製網址</button>
+      <li>打開「<b>捷徑</b>」App → 右上角 <b>+</b></li>
+      <li>搜尋動作「<b>打開 URL</b>」→ 點它加入</li>
+      <li>點動作裡那格空白的 URL 欄位，貼上這段（先按下面的複製鈕）：
+        <pre id="ep">https://naver2google.onrender.com/a/</pre>
+        <button class="copy" onclick="cp('ep',this)">複製</button>
       </li>
-      <li>點「<b>顯示更多</b>」展開，把「<b>方法</b>」改成 <b>POST</b></li>
-      <li>「<b>請求內文</b>」選 <b>JSON</b>，新增一個欄位：
-        <table>
-          <tr><th>鍵 (Key)</th><th>類型</th><th>值 (Value)</th></tr>
-          <tr><td>url</td><td>文字</td><td>捷徑輸入</td></tr>
-        </table>
-        <span class="dim">「捷徑輸入」是點值欄位後、從鍵盤上方的變數列選的，不要用手打。</span>
-      </li>
+      <li>游標留在<b>那段文字的最後面</b>，點鍵盤正上方那排的
+        <b>「捷徑輸入」</b>把它插進去。<br>
+        <span class="dim">看起來會像：<code>…onrender.com/a/ 捷徑輸入</code>，
+        「捷徑輸入」是一個藍色小方塊，不是手打的字。</span></li>
+      <li>點最上面的標題 → <b>重新命名</b> 成「<b>用 Apple 地圖開啟</b>」</li>
+      <li>點標題旁的 <b>ⓘ</b> → 打開「<b>在分享表單中顯示</b>」→
+        下面「分享表單類型」只勾 <b>URL</b> → 右上角<b>完成</b></li>
     </ol>
+    <div class="note"><b>好了。</b>到 Naver Map 開任一地點 → <b>分享</b> →
+    往下滑找到「用 Apple 地圖開啟」→ 直接跳進 Apple 地圖。<br>
+    想要 Google 版就再建一個一模一樣的，只是網址結尾改成
+    <code>/g/</code>。</div>
   </div>
 
   <div class="card">
-    <h2><span class="num">3</span>加入第二個動作：打開 URL</h2>
-    <ol class="steps">
-      <li>搜尋動作「<b>打開 URL</b>」並加入（它會自動接上一步的結果）</li>
-      <li>確認它的輸入是「<b>URL 的內容</b>」，然後右上角<b>完成</b></li>
-    </ol>
-    <div class="note"><b>做完了。</b>到 Naver Map App 隨便開一個地點 → <b>分享</b> →
-    往下滑找到「<b>用 Apple 地圖開啟</b>」→ 直接跳進 Apple 地圖，按導航就能走。
-    第一次執行會問一次網路權限，允許即可。</div>
+    <h2>不想弄捷徑？</h2>
+    <p class="dim">在 Naver Map 按分享 → <b>拷貝</b>，然後到
+    <a href="/">網頁版</a>貼上，一樣會給你 Apple／Google 地圖的按鈕。
+    把網頁版「加入主畫面」就跟一個 App 差不多。</p>
   </div>
 
   <div class="card">
-    <h2><span class="num">4</span>想要 Google 地圖版？</h2>
-    <p>一模一樣的做法，只是網址結尾改成 <code>/google</code>：</p>
-    <pre id="ep2">https://naver2google.onrender.com/google</pre>
-    <button class="copy" onclick="cp('ep2',this)">複製網址</button>
-    <p class="dim" style="margin-top:10px">兩個捷徑可以同時存在，分享表單會一起列出來。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">5</span>備援與疑難排解</h2>
+    <h2>怪怪的時候</h2>
     <table>
       <tr><th>狀況</th><th>怎麼辦</th></tr>
-      <tr><td>雲端版睡著、第一次比較慢</td><td>已有每 8 分鐘保溫，通常 1~2 秒；真的慢就再按一次</td></tr>
-      <tr><td>在家裡 Wi-Fi 想更快</td><td>網址換成 <code>http://192.168.50.210:8585/apple</code>（自架版，區網才通）</td></tr>
-      <tr><td>捷徑沒出現在分享表單</td><td>回捷徑的 ⓘ 確認「在分享表單中顯示」有開、且勾了 URL</td></tr>
-      <tr><td>跳出錯誤而不是地圖</td><td>該地點可能抓不到座標，會退回用店名搜尋；先在<a href="/">網頁版</a>貼一次看結果</td></tr>
+      <tr><td>捷徑沒出現在分享表單</td><td>回捷徑的 ⓘ 確認「在分享表單中顯示」有開、而且勾了 URL</td></tr>
+      <tr><td>第一次比較慢</td><td>雲端主機在醒過來，通常 1~2 秒；已設每 8 分鐘保溫</td></tr>
+      <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/a/</code>（自架版，只有家裡網路通）</td></tr>
+      <tr><td>開出來位置怪怪的</td><td>那個地點抓不到座標，會退回用店名搜尋；先在<a href="/">網頁版</a>貼一次看結果</td></tr>
     </table>
-    <div class="warn">不用 POST 也可以：<code>/apple?url=<i>網址</i></code> 一樣能用，
-    但捷徑要多加一個「<b>URL 編碼</b>」動作處理特殊字元，所以上面才用 POST——少一步、也不會編碼出錯。</div>
+    <div class="dim" style="margin-top:12px">技術上：<code>/a/</code> 和 <code>/g/</code>
+    會把後面接的 Naver 網址轉好，再 302 轉到 Apple／Google 地圖，所以捷徑只要「打開 URL」一個動作。
+    另有回純文字網址的 <code>/apple</code>、<code>/google</code> 端點可用。</div>
   </div>
 
   <a class="back" href="/">← 回到網頁版轉換器</a>
@@ -605,6 +608,55 @@ def api_plain():
                         content_type="text/plain; charset=utf-8")
     return Response(result[f"{target}_url"],
                     content_type="text/plain; charset=utf-8")
+
+
+@app.route("/a/<path:rest>")
+@app.route("/g/<path:rest>")
+def api_path_redirect(rest: str):
+    """把 Naver 網址直接接在路徑後面 → 302 到 Apple/Google 地圖。
+
+        /a/https://naver.me/xxxxx      → Apple 地圖
+        /g/naver.me/xxxxx              → Google 地圖（scheme 可省略）
+
+    這樣 iOS 捷徑只要**一個動作**（打開 URL），不必 POST、不必 URL 編碼。
+    注意：Safari/Werkzeug 會把連續斜線壓成一個，所以 https:/ 也要收。
+    """
+    target = "apple" if request.path.startswith("/a/") else "google"
+    url = rest.strip()
+    if request.query_string:
+        url += "?" + request.query_string.decode("utf-8", "replace")
+    url = re.sub(r"^(https?):/{1,2}", r"\1://", url)      # https:/x → https://x
+    if not url.startswith(("http://", "https://", "nmap://")):
+        url = "https://" + url
+    try:
+        result = convert(url)
+    except NaverUnavailable as e:
+        return Response(f"Naver 暫時無法連線：{e}", status=503,
+                        content_type="text/plain; charset=utf-8")
+    except Exception as e:  # noqa: BLE001
+        return Response(f"解析失敗：{e}", status=502,
+                        content_type="text/plain; charset=utf-8")
+    return redirect(result[f"{target}_url"])
+
+
+SHORTCUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shortcuts")
+
+
+@app.route("/dl/<name>.shortcut")
+def download_shortcut(name: str):
+    """提供未簽章的 .shortcut 檔（需開「允許不受信任的捷徑」才能匯入）。"""
+    if name not in ("naver-to-apple-maps", "naver-to-google-maps"):
+        return Response("找不到這個捷徑", status=404,
+                        content_type="text/plain; charset=utf-8")
+    path = os.path.join(SHORTCUT_DIR, f"{name}.shortcut")
+    if not os.path.exists(path):
+        return Response("捷徑檔尚未產生", status=503,
+                        content_type="text/plain; charset=utf-8")
+    with open(path, "rb") as fh:
+        data = fh.read()
+    return Response(data, content_type="application/x-shortcut", headers={
+        "Content-Disposition": f'attachment; filename="{name}.shortcut"',
+    })
 
 
 @app.route("/shortcut")

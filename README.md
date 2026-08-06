@@ -54,21 +54,42 @@ curl -X POST https://naver2google.onrender.com/apple -d '<NAVER_URL>'
 
 失敗時回純文字訊息 + 400/502/503。
 
-## iPhone 使用方式 A：捷徑（推薦，只要 2 個動作）
+### `GET /a/<NAVER_URL>`、`GET /g/<NAVER_URL>`
+
+把 Naver 網址**直接接在路徑後面** → 302 到 Apple / Google 地圖。
+scheme 可省略，被壓成單斜線（`https:/`）也收得到：
+
+```
+/a/https://naver.me/xxxxx
+/a/naver.me/xxxxx
+/g/map.naver.com/p/entry/place/13140708
+```
+
+存在的意義：iOS 捷徑只要**一個動作**（打開 URL），不必 POST、不必 URL 編碼。
+
+## iPhone 使用方式 A：捷徑（推薦）
 
 線上圖文步驟：**<https://naver2google.onrender.com/shortcut>**
 
-摘要：
-1. 捷徑 App → 新增 →（ⓘ）打開「在分享表單中顯示」，類型只勾 **URL**
-2. 動作「**取得 URL 的內容**」→ URL 填 `https://naver2google.onrender.com/apple`
-   → 方法 **POST**、內文 **JSON**、加一個欄位 `url` = 變數「**捷徑輸入**」
-3. 動作「**打開 URL**」→ 完成
+**A-1 直接下載現成捷徑**（用 iPhone Safari 開）
 
-之後在 Naver Map 按分享就會看到這個捷徑，一按直接跳 Apple 地圖。
-想要 Google 版就把網址改成 `/google` 再建一個。
+- <https://naver2google.onrender.com/dl/naver-to-apple-maps.shortcut>
+- <https://naver2google.onrender.com/dl/naver-to-google-maps.shortcut>
 
-> 沒有提供 iCloud 捷徑連結——那種連結只能由 Apple 裝置產生並上傳。
-> 自己建的好處是不必開「允許不受信任的捷徑」。
+檔案由 `shortcuts/build_shortcuts.py` 產生（未簽章），內容就是一個
+「打開 URL → `https://naver2google.onrender.com/a/<捷徑輸入>`」動作。
+未簽章的捷徑要先開「設定 → 捷徑 → 允許不受信任的捷徑」才能匯入。
+
+**A-2 手動建（只有 1 個動作，不必開任何設定）**
+
+1. 捷徑 App → **+** → 加入動作「**打開 URL**」
+2. URL 欄位貼 `https://naver2google.onrender.com/a/`，游標留在最後，
+   從鍵盤上方變數列插入「**捷徑輸入**」
+3. 重新命名 → ⓘ 打開「在分享表單中顯示」，類型只勾 **URL**
+
+Google 版把 `/a/` 換成 `/g/` 即可。
+
+> 沒有 iCloud 捷徑連結——那種連結只能由 Apple 裝置產生並上傳。
 
 ## iPhone 使用方式 B（Scriptable）
 

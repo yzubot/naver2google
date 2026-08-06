@@ -152,4 +152,58 @@ def test_shortcut_guide_page(monkeypatch):
     r = c.get("/shortcut")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "取得 URL 的內容" in body and "/apple" in body
+    assert "打開 URL" in body and "/a/" in body
+    assert "/dl/naver-to-apple-maps.shortcut" in body
+
+
+# -- /a/ /g/ 一個動作用的路徑轉址 -------------------------------------------
+def test_path_redirect_apple(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.get("/a/https://naver.me/short")
+    assert r.status_code == 302
+    assert r.headers["Location"].startswith("https://maps.apple.com/?ll=37.5,127.0")
+
+
+def test_path_redirect_google(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.get("/g/https://naver.me/short")
+    assert r.status_code == 302
+    assert "google.com/maps" in r.headers["Location"]
+
+
+def test_path_redirect_collapsed_slashes(monkeypatch):
+    """Safari/Werkzeug 會把 https:// 壓成 https:/ ，也要能還原。"""
+    c = _client(monkeypatch)
+    r = c.get("/a/https:/naver.me/short")
+    assert r.status_code == 302
+    assert "maps.apple.com" in r.headers["Location"]
+
+
+def test_path_redirect_without_scheme(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.get("/a/naver.me/short")
+    assert r.status_code == 302
+    assert "maps.apple.com" in r.headers["Location"]
+
+
+def test_download_shortcut_file(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.get("/dl/naver-to-apple-maps.shortcut")
+    assert r.status_code == 200
+    assert r.headers["Content-Type"] == "application/x-shortcut"
+    import plistlib
+    d = plistlib.loads(r.get_data())
+    assert d["WFWorkflowTypes"] == ["ActionExtension"]
+    assert d["WFWorkflowInputContentItemClasses"] == ["WFURLContentItem"]
+    act = d["WFWorkflowActions"][0]
+    assert act["WFWorkflowActionIdentifier"] == "is.workflow.actions.openurl"
+    val = act["WFWorkflowActionParameters"]["WFInput"]["Value"]
+    assert val["string"].endswith("/a/￼")
+    # 佔位符位置必須指到字串最後一個字元，否則捷徑會插錯地方
+    idx = int(next(iter(val["attachmentsByRange"])).strip("{}").split(",")[0])
+    assert idx == len(val["string"]) - 1
+
+
+def test_download_shortcut_unknown_name(monkeypatch):
+    c = _client(monkeypatch)
+    assert c.get("/dl/whatever.shortcut").status_code == 404
