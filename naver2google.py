@@ -439,48 +439,43 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
 <body>
 <div class="wrap">
   <h1>在 Naver Map 按分享，一鍵開 Apple 地圖</h1>
-  <div class="sub">兩種做法，選一個就好。看不懂就用做法 B，它只有<b>一個動作</b>。</div>
+  <div class="sub">捷徑本身只有<b>一個動作</b>，建一次就永久能用。跟著下面 6 步做。</div>
 
   <div class="card hero">
-    <span class="tag tag-a">做法 A ・ 最快</span>
-    <h2>直接下載現成捷徑</h2>
-    <p class="dim">用 <b>iPhone 的 Safari</b> 打開這一頁，然後按下面的按鈕。</p>
-    <a class="dl" href="/dl/naver-to-apple-maps.shortcut">⬇︎ 下載「用 Apple 地圖開啟」</a>
-    <a class="dl g" href="/dl/naver-to-google-maps.shortcut">⬇︎ 下載「用 Google 地圖開啟」</a>
+    <span class="tag tag-a">照著做 ・ 6 步 ・ 約 1 分鐘</span>
+    <h2>手動建立（只有 1 個動作）</h2>
     <ol class="steps">
-      <li>按上面按鈕 → Safari 會問「要下載嗎」→ 按 <b>下載</b></li>
-      <li>點網址列右邊的 <b>⬇︎</b> → 點剛下載的檔案</li>
-      <li>捷徑 App 會跳出來 → 拉到最下面按 <b>加入捷徑</b></li>
-    </ol>
-    <div class="warn"><b>如果按了沒反應／說不能打開：</b>
-    去「設定 → 捷徑」把「<b>允許不受信任的捷徑</b>」打開，再回來按一次。
-    <br><span class="dim">那個開關要先執行過任一個捷徑才會出現。真的找不到就直接用下面的做法 B，一樣快。</span></div>
-  </div>
-
-  <hr>
-
-  <div class="card">
-    <span class="tag tag-b">做法 B ・ 自己建，只有 1 個動作</span>
-    <h2>手動建立（不需要開任何設定）</h2>
-    <ol class="steps">
-      <li>打開「<b>捷徑</b>」App → 右上角 <b>+</b></li>
-      <li>搜尋動作「<b>打開 URL</b>」→ 點它加入</li>
-      <li>點動作裡那格空白的 URL 欄位，貼上這段（先按下面的複製鈕）：
+      <li>打開 iPhone 內建的「<b>捷徑</b>」App → 右上角 <b>+</b></li>
+      <li>上面有個搜尋框，打「<b>打開 URL</b>」→ 點搜出來的那一項</li>
+      <li>畫面上會出現一格「打開 URL <span class="dim">（空白欄位）</span>」。
+        先按下面的複製鈕，再點那格空白欄位貼上：
         <pre id="ep">https://naver2google.onrender.com/a/</pre>
-        <button class="copy" onclick="cp('ep',this)">複製</button>
+        <button class="copy" onclick="cp('ep',this)">複製這段網址</button>
       </li>
-      <li>游標留在<b>那段文字的最後面</b>，點鍵盤正上方那排的
-        <b>「捷徑輸入」</b>把它插進去。<br>
-        <span class="dim">看起來會像：<code>…onrender.com/a/ 捷徑輸入</code>，
-        「捷徑輸入」是一個藍色小方塊，不是手打的字。</span></li>
-      <li>點最上面的標題 → <b>重新命名</b> 成「<b>用 Apple 地圖開啟</b>」</li>
-      <li>點標題旁的 <b>ⓘ</b> → 打開「<b>在分享表單中顯示</b>」→
-        下面「分享表單類型」只勾 <b>URL</b> → 右上角<b>完成</b></li>
+      <li><b>最關鍵的一步：</b>貼完後游標會停在網址最後面，
+        <b>不要移動它</b>，直接點鍵盤<b>正上方那一排</b>裡的
+        「<b>捷徑輸入</b>」。<br>
+        <span class="dim">點下去會多出一個藍色小方塊，變成
+        <code>…/a/ 捷徑輸入</code>。如果那排沒看到「捷徑輸入」，
+        往左右滑一下，或先點一下網址欄位讓鍵盤出來。</span></li>
+      <li>點畫面最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
+      <li>點名稱旁邊的 <b>ⓘ</b> → 把「<b>在分享表單中顯示</b>」打開 →
+        下面「分享表單類型」<b>只勾 URL</b>（其他取消）→ 右上角<b>完成</b></li>
     </ol>
     <div class="note"><b>好了。</b>到 Naver Map 開任一地點 → <b>分享</b> →
     往下滑找到「用 Apple 地圖開啟」→ 直接跳進 Apple 地圖。<br>
-    想要 Google 版就再建一個一模一樣的，只是網址結尾改成
-    <code>/g/</code>。</div>
+    想要 Google 版就再建一個一模一樣的，只是網址結尾改成 <code>/g/</code>。</div>
+  </div>
+
+  <div class="card">
+    <h2>為什麼沒有「下載就好」的捷徑檔？</h2>
+    <p class="dim">我本來做了一個 <code>.shortcut</code> 檔給你直接匯入，
+    但 iOS 會擋下來說「<b>不支援輸入未簽署的捷徑檔案</b>」——
+    現在的 iOS 只接受 Apple 官方 iCloud 連結格式的捷徑，
+    而那種連結<b>只能從 Apple 裝置上傳產生</b>，我的 Linux 主機做不出來。
+    「允許不受信任的捷徑」那個開關也已經救不了這種檔案。</p>
+    <p class="dim" style="margin-top:8px">所以上面那 6 步是唯一可靠的做法。
+    好消息是它真的只有一個動作，建一次就永久有效。</p>
   </div>
 
   <div class="card">
@@ -644,19 +639,17 @@ SHORTCUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shortcu
 
 @app.route("/dl/<name>.shortcut")
 def download_shortcut(name: str):
-    """提供未簽章的 .shortcut 檔（需開「允許不受信任的捷徑」才能匯入）。"""
-    if name not in ("naver-to-apple-maps", "naver-to-google-maps"):
-        return Response("找不到這個捷徑", status=404,
-                        content_type="text/plain; charset=utf-8")
-    path = os.path.join(SHORTCUT_DIR, f"{name}.shortcut")
-    if not os.path.exists(path):
-        return Response("捷徑檔尚未產生", status=503,
-                        content_type="text/plain; charset=utf-8")
-    with open(path, "rb") as fh:
-        data = fh.read()
-    return Response(data, content_type="application/x-shortcut", headers={
-        "Content-Disposition": f'attachment; filename="{name}.shortcut"',
-    })
+    """已停用。
+
+    iOS 現在直接拒絕未簽章的捷徑檔（「不支援輸入未簽署的捷徑檔案」），
+    連「允許不受信任的捷徑」也救不了；能匯入的只有 Apple 官方 iCloud 連結，
+    而那種連結只能從 Apple 裝置上傳產生。檔案與產生器留在 shortcuts/ 供參考，
+    但不再提供下載，免得使用者踩到那個錯誤訊息。
+    """
+    return Response(
+        "iOS 不接受未簽署的捷徑檔（會顯示「不支援輸入未簽署的捷徑檔案」），\n"
+        "所以這個下載已停用。請改用 /shortcut 頁面上的手動步驟——只有一個動作。",
+        status=410, content_type="text/plain; charset=utf-8")
 
 
 @app.route("/shortcut")

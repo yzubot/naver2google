@@ -71,16 +71,7 @@ scheme 可省略，被壓成單斜線（`https:/`）也收得到：
 
 線上圖文步驟：**<https://naver2google.onrender.com/shortcut>**
 
-**A-1 直接下載現成捷徑**（用 iPhone Safari 開）
-
-- <https://naver2google.onrender.com/dl/naver-to-apple-maps.shortcut>
-- <https://naver2google.onrender.com/dl/naver-to-google-maps.shortcut>
-
-檔案由 `shortcuts/build_shortcuts.py` 產生（未簽章），內容就是一個
-「打開 URL → `https://naver2google.onrender.com/a/<捷徑輸入>`」動作。
-未簽章的捷徑要先開「設定 → 捷徑 → 允許不受信任的捷徑」才能匯入。
-
-**A-2 手動建（只有 1 個動作，不必開任何設定）**
+手動建，只有 **1 個動作**：
 
 1. 捷徑 App → **+** → 加入動作「**打開 URL**」
 2. URL 欄位貼 `https://naver2google.onrender.com/a/`，游標留在最後，
@@ -89,7 +80,13 @@ scheme 可省略，被壓成單斜線（`https:/`）也收得到：
 
 Google 版把 `/a/` 換成 `/g/` 即可。
 
-> 沒有 iCloud 捷徑連結——那種連結只能由 Apple 裝置產生並上傳。
+> ### ⚠️ 不能提供「下載就好」的捷徑檔
+> 曾用 `shortcuts/build_shortcuts.py` 產生未簽章的 `.shortcut` 檔給
+> `/dl/<name>.shortcut` 下載，**實測 iOS 直接拒絕**：
+> 「不支援輸入未簽署的捷徑檔案。請使用其他分享選項。」
+> 「允許不受信任的捷徑」開關也救不了——iOS 只吃 Apple 官方 iCloud 連結格式，
+> 而那種連結只能從 Apple 裝置上傳產生（簽章需要 macOS 的 `shortcuts sign`）。
+> `/dl/` 現在回 410 + 說明，產生器留著供日後有 Mac 時使用。
 
 ## iPhone 使用方式 B（Scriptable）
 

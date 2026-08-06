@@ -153,7 +153,7 @@ def test_shortcut_guide_page(monkeypatch):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert "打開 URL" in body and "/a/" in body
-    assert "/dl/naver-to-apple-maps.shortcut" in body
+    assert "未簽署的捷徑檔案" in body        # 說明為什麼沒有下載版
 
 
 # -- /a/ /g/ 一個動作用的路徑轉址 -------------------------------------------
@@ -186,24 +186,14 @@ def test_path_redirect_without_scheme(monkeypatch):
     assert "maps.apple.com" in r.headers["Location"]
 
 
-def test_download_shortcut_file(monkeypatch):
+def test_download_shortcut_is_gone(monkeypatch):
+    """iOS 擋未簽章捷徑檔，下載已停用——要回 410 + 說明，不能再送出檔案。"""
     c = _client(monkeypatch)
     r = c.get("/dl/naver-to-apple-maps.shortcut")
-    assert r.status_code == 200
-    assert r.headers["Content-Type"] == "application/x-shortcut"
-    import plistlib
-    d = plistlib.loads(r.get_data())
-    assert d["WFWorkflowTypes"] == ["ActionExtension"]
-    assert d["WFWorkflowInputContentItemClasses"] == ["WFURLContentItem"]
-    act = d["WFWorkflowActions"][0]
-    assert act["WFWorkflowActionIdentifier"] == "is.workflow.actions.openurl"
-    val = act["WFWorkflowActionParameters"]["WFInput"]["Value"]
-    assert val["string"].endswith("/a/￼")
-    # 佔位符位置必須指到字串最後一個字元，否則捷徑會插錯地方
-    idx = int(next(iter(val["attachmentsByRange"])).strip("{}").split(",")[0])
-    assert idx == len(val["string"]) - 1
+    assert r.status_code == 410
+    assert "未簽署" in r.get_data(as_text=True)
 
 
 def test_download_shortcut_unknown_name(monkeypatch):
     c = _client(monkeypatch)
-    assert c.get("/dl/whatever.shortcut").status_code == 404
+    assert c.get("/dl/whatever.shortcut").status_code == 410
