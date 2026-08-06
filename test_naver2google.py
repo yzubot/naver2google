@@ -207,3 +207,43 @@ def test_path_redirect_strips_stray_quotes(monkeypatch):
         r = c.get(f"/a/{junk}")
         assert r.status_code == 302, junk
         assert "maps.apple.com" in r.headers["Location"], junk
+
+
+# -- 回歸：HTML 樣板不是 raw string，JS 裡的 \n 會被 Python 先吃掉 -----------
+def _script_blocks(html: str) -> list[str]:
+    import re
+    return re.findall(r"(?is)<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html)
+
+
+def _has_unterminated_string_literal(js: str) -> bool:
+    """字串字面值裡出現真正的換行 → JS 直接 SyntaxError，整頁腳本失效。"""
+    for line in js.split("\n"):
+        for quote in ("'", '"'):
+            n, esc = 0, False
+            for ch in line:
+                if esc:
+                    esc = False
+                    continue
+                if ch == "\\":
+                    esc = True
+                elif ch == quote:
+                    n += 1
+            if n % 2 == 1:
+                return True
+    return False
+
+
+def test_index_script_has_no_broken_string_literal(monkeypatch):
+    """曾經 split('\\n') 的 \\n 被 Python 解成真換行，doConvert 整個沒定義，
+    網頁按「轉換」完全沒反應。這條測試就是防它再發生。"""
+    c = _client(monkeypatch)
+    for path in ("/", "/shortcut"):
+        body = c.get(path).get_data(as_text=True)
+        for js in _script_blocks(body):
+            assert not _has_unterminated_string_literal(js), path
+
+
+def test_index_newline_split_is_escaped(monkeypatch):
+    c = _client(monkeypatch)
+    body = c.get("/").get_data(as_text=True)
+    assert r"split('\n')" in body      # 送到瀏覽器的必須是反斜線+n

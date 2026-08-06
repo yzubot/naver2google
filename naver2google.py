@@ -321,7 +321,7 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
 const LINKRE=/(https?:[/][/](?:naver[.]me|m?[.]?map[.]naver[.]com)\\S+|nmap:[/][/]\\S+)/g;
 function linkLines(text){
   // one entry per line that contains a Naver link; if none, treat whole box as 1
-  const lines=text.split('\n').map(s=>s.trim()).filter(Boolean);
+  const lines=text.split('\\n').map(s=>s.trim()).filter(Boolean);
   const withLinks=lines.filter(l=>LINKRE.test(l));
   LINKRE.lastIndex=0;
   return withLinks.length>=2?withLinks:null;
