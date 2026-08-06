@@ -197,3 +197,13 @@ def test_download_shortcut_is_gone(monkeypatch):
 def test_download_shortcut_unknown_name(monkeypatch):
     c = _client(monkeypatch)
     assert c.get("/dl/whatever.shortcut").status_code == 410
+
+
+def test_path_redirect_strips_stray_quotes(monkeypatch):
+    """使用者貼上時常黏到反引號/引號，不該因此壞掉。"""
+    c = _client(monkeypatch)
+    for junk in ("`https://naver.me/short", "'https://naver.me/short'",
+                 "<https://naver.me/short>", "%60https://naver.me/short"):
+        r = c.get(f"/a/{junk}")
+        assert r.status_code == 302, junk
+        assert "maps.apple.com" in r.headers["Location"], junk

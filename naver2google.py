@@ -446,7 +446,10 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
     <h2>手動建立（只有 1 個動作）</h2>
     <ol class="steps">
       <li>打開 iPhone 內建的「<b>捷徑</b>」App → 右上角 <b>+</b></li>
-      <li>上面有個搜尋框，打「<b>打開 URL</b>」→ 點搜出來的那一項</li>
+      <li>上面有個搜尋框，打「<b>打開 URL</b>」→ 點<b>「打開 URL」</b>那一項
+        <div class="warn" style="margin-top:8px">⚠️ 搜尋結果裡還有一個很像的
+        「<b>展開 URL</b>」——<b>那個是錯的</b>，它只會把短網址還原成長網址，
+        不會打開任何東西。要選的是「<b>打開</b> URL」。</div></li>
       <li>畫面上會出現一格「打開 URL <span class="dim">（空白欄位）</span>」。
         先按下面的複製鈕，再點那格空白欄位貼上：
         <pre id="ep">https://naver2google.onrender.com/a/</pre>
@@ -457,7 +460,9 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
         「<b>捷徑輸入</b>」。<br>
         <span class="dim">點下去會多出一個藍色小方塊，變成
         <code>…/a/ 捷徑輸入</code>。如果那排沒看到「捷徑輸入」，
-        往左右滑一下，或先點一下網址欄位讓鍵盤出來。</span></li>
+        往左右滑一下，或先點一下網址欄位讓鍵盤出來。<br>
+        網址結尾必須就是 <code>/a/</code> 後面直接接藍色方塊——中間<b>不能有
+        引號、反引號或空白</b>（貼上時很容易黏到）。</span></li>
       <li>點畫面最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
       <li>點名稱旁邊的 <b>ⓘ</b> → 把「<b>在分享表單中顯示</b>」打開 →
         下面「分享表單類型」<b>只勾 URL</b>（其他取消）→ 右上角<b>完成</b></li>
@@ -620,6 +625,8 @@ def api_path_redirect(rest: str):
     url = rest.strip()
     if request.query_string:
         url += "?" + request.query_string.decode("utf-8", "replace")
+    # 使用者手打／貼上時常黏到反引號、引號、角括號或全形空白，先刮掉再判斷。
+    url = url.strip("`'\"<> \t\u3000")
     url = re.sub(r"^(https?):/{1,2}", r"\1://", url)      # https:/x → https://x
     if not url.startswith(("http://", "https://", "nmap://")):
         url = "https://" + url
