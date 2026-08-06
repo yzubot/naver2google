@@ -297,3 +297,28 @@ def test_path_redirect_does_not_prepend_scheme_to_plain_text(monkeypatch):
     from urllib.parse import quote
     r = c.get("/a/" + quote("首尔特别市 钟路区 乐园洞 285", safe=""))
     assert r.status_code == 302
+
+
+# -- /m/ App scheme（universal link 不會因跨網域 302 而觸發）----------------
+def test_app_scheme_conversion():
+    assert n._app_scheme("https://maps.apple.com/?ll=1,2&q=x") == "maps://?ll=1,2&q=x"
+    assert n._app_scheme("https://www.google.com/maps") == "https://www.google.com/maps"
+
+
+def test_m_route_serves_jump_page(monkeypatch):
+    """/m/ 不能用 302——werkzeug 會把 maps://?… 正規化成 maps:?…。
+    改回 HTML 由 JS 跳轉，字串要原封不動。"""
+    c = _client(monkeypatch)
+    r = c.get("/m/https://naver.me/short")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert 'location.href="maps://?ll=37.5,127.0' in body
+    assert "maps:?" not in body                      # 沒被砍掉 authority
+    assert 'href="https://maps.apple.com/' in body   # 網頁版備援按鈕還在
+
+
+def test_a_route_still_plain_redirect(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.get("/a/https://naver.me/short")
+    assert r.status_code == 302
+    assert r.headers["Location"].startswith("https://maps.apple.com/")

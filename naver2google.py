@@ -161,6 +161,17 @@ def _extract_url(text: str) -> str:
     return text
 
 
+def _app_scheme(apple_url: str) -> str:
+    """`https://maps.apple.com/?…` → `maps://?…`（直接叫醒「地圖」App）。
+
+    為什麼需要：iOS 的 universal link **不會**因為跨網域 302 而觸發，所以
+    「打開 URL → 我們的 /a/ → 302 到 maps.apple.com」只會停在 Safari，
+    而且 Apple 現在有網頁版地圖，會渲染成 maps.apple/p/xxxx 的網頁。
+    改丟 `maps://` 這個 App scheme，Safari 會直接把它交給「地圖」App。
+    """
+    return re.sub(r"^https://maps\.apple\.com/", "maps://", apple_url)
+
+
 def _clean_search_text(text: str) -> str:
     """把 Naver 分享文字整理成適合當搜尋字串的樣子。
 
@@ -475,8 +486,11 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
         不會打開任何東西。要選的是「<b>打開</b> URL」。</div></li>
       <li>畫面上會出現一格「打開 URL <span class="dim">（空白欄位）</span>」。
         先按下面的複製鈕，再點那格空白欄位貼上：
-        <pre id="ep">https://naver2google.onrender.com/a/</pre>
+        <pre id="ep">https://naver2google.onrender.com/m/</pre>
         <button class="copy" onclick="cp('ep',this)">複製這段網址</button>
+        <div class="dim" style="margin-top:8px">結尾是 <code>/m/</code>——
+        會直接叫醒「地圖」App。如果用 <code>/a/</code> 會停在 Safari 的
+        網頁版地圖（iOS 的 universal link 不吃跨網域轉址）。</div>
       </li>
       <li><b>最關鍵的一步：</b>貼完後游標會停在網址最後面，
         <b>不要移動它</b>，直接點鍵盤<b>正上方那一排</b>裡的
@@ -498,6 +512,9 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
     <div class="note"><b>好了。</b>到 Naver Map 開任一地點 → <b>分享</b> →
     往下滑找到「用 Apple 地圖開啟」→ 直接跳進 Apple 地圖。<br>
     想要 Google 版就再建一個一模一樣的，只是網址結尾改成 <code>/g/</code>。</div>
+    <div class="warn">已經建好、但打開後停在 <b>Safari 的網頁地圖</b>
+    （網址變成 <code>maps.apple/p/xxxx</code>）？
+    把動作裡的網址從 <code>/a/</code> 改成 <code>/m/</code> 就好，其他都不用動。</div>
   </div>
 
   <div class="card">
@@ -527,7 +544,7 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/a/</code>（自架版，只有家裡網路通）</td></tr>
       <tr><td>開出來位置怪怪的</td><td>那個地點抓不到座標，會退回用店名搜尋；先在<a href="/">網頁版</a>貼一次看結果</td></tr>
     </table>
-    <div class="dim" style="margin-top:12px">技術上：<code>/a/</code> 和 <code>/g/</code>
+    <div class="dim" style="margin-top:12px">技術上：<code>/m/</code>、<code>/a/</code> 和 <code>/g/</code>
     會把後面接的 Naver 網址轉好，再 302 轉到 Apple／Google 地圖，所以捷徑只要「打開 URL」一個動作。
     另有回純文字網址的 <code>/apple</code>、<code>/google</code> 端點可用。</div>
   </div>
@@ -654,16 +671,22 @@ app.url_map.converters["anytext"] = _AnyTextConverter
 
 @app.route("/a/<anytext:rest>")
 @app.route("/g/<anytext:rest>")
+@app.route("/m/<anytext:rest>")
 def api_path_redirect(rest: str):
     """把 Naver 網址直接接在路徑後面 → 302 到 Apple/Google 地圖。
 
-        /a/https://naver.me/xxxxx      → Apple 地圖
+        /a/https://naver.me/xxxxx      → Apple 地圖（https 連結）
+        /m/https://naver.me/xxxxx      → Apple 地圖（maps:// 直接開 App）
         /g/naver.me/xxxxx              → Google 地圖（scheme 可省略）
 
     這樣 iOS 捷徑只要**一個動作**（打開 URL），不必 POST、不必 URL 編碼。
     注意：Safari/Werkzeug 會把連續斜線壓成一個，所以 https:/ 也要收。
     """
-    target = "apple" if request.path.startswith("/a/") else "google"
+    if request.path.startswith("/g/"):
+        target, app_scheme = "google", False
+    else:
+        # /m/ = 直接叫醒「地圖」App（maps://），/a/ = 一般 https 連結
+        target, app_scheme = "apple", request.path.startswith("/m/")
     url = rest.strip()
     if request.query_string:
         url += "?" + request.query_string.decode("utf-8", "replace")
@@ -685,7 +708,37 @@ def api_path_redirect(rest: str):
     except Exception as e:  # noqa: BLE001
         return Response(f"解析失敗：{e}", status=502,
                         content_type="text/plain; charset=utf-8")
-    return redirect(result[f"{target}_url"])
+    dest = result[f"{target}_url"]
+    if not app_scheme:
+        return redirect(dest)
+    # 不能用 302：werkzeug 會對 Location 做 iri_to_uri 正規化，把 `maps://?…`
+    # 的空 authority 砍成 `maps:?…`。改回一頁 HTML 用 JS 跳轉，字串原封不動
+    # 交給 Safari，順便留一顆按鈕給自動跳轉被擋下來的情況。
+    return Response(
+        _APP_JUMP_HTML.replace("__APP__", _app_scheme(dest)).replace("__WEB__", dest),
+        content_type="text/html; charset=utf-8")
+
+
+_APP_JUMP_HTML = """\
+<!DOCTYPE html><html lang="zh-TW"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>正在打開地圖…</title>
+<style>body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;
+color:#e2e8f0;display:flex;flex-direction:column;align-items:center;
+justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center}
+a{display:block;width:100%;max-width:320px;margin:8px 0;padding:14px;
+border-radius:10px;text-decoration:none;font-weight:700}
+.app{background:#22c55e;color:#04240f}.web{background:#1e293b;color:#e2e8f0}
+p{color:#94a3b8;font-size:.9rem;margin:0 0 18px}</style></head><body>
+<p id="msg">正在打開「地圖」App…</p>
+<a class="app" href="__APP__">打開「地圖」App</a>
+<a class="web" href="__WEB__">改用網頁版地圖</a>
+<script>
+location.href="__APP__";
+setTimeout(function(){document.getElementById('msg').textContent='沒自動跳過去的話，按下面的按鈕';},1200);
+</script>
+</body></html>
+"""
 
 
 SHORTCUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shortcuts")

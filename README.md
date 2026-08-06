@@ -54,7 +54,7 @@ curl -X POST https://naver2google.onrender.com/apple -d '<NAVER_URL>'
 
 失敗時回純文字訊息 + 400/502/503。
 
-### `GET /a/<NAVER_URL>`、`GET /g/<NAVER_URL>`
+### `GET /m/<NAVER_URL>`、`GET /a/<NAVER_URL>`、`GET /g/<NAVER_URL>`
 
 把 Naver 網址**直接接在路徑後面** → 302 到 Apple / Google 地圖。
 scheme 可省略，被壓成單斜線（`https:/`）也收得到：
@@ -64,6 +64,16 @@ scheme 可省略，被壓成單斜線（`https:/`）也收得到：
 /a/naver.me/xxxxx
 /g/map.naver.com/p/entry/place/13140708
 ```
+
+- `/m/` → 回一頁 HTML，用 JS 跳 `maps://?…` **直接叫醒「地圖」App**（捷徑用這個）
+- `/a/` → 302 到 `https://maps.apple.com/…`
+- `/g/` → 302 到 Google Maps
+
+**為什麼捷徑要用 `/m/` 而不是 `/a/`**：iOS 的 universal link **不會**因為跨網域
+302 而觸發，所以 `/a/` 只會停在 Safari，而且 Apple 現在有網頁版地圖，會渲染成
+`maps.apple/p/xxxx`。`/m/` 改丟 `maps://` App scheme 就會直接開 App。
+不能用 302 送 `maps://`——werkzeug 的 `iri_to_uri` 會把空 authority 砍掉變成
+`maps:?…`，所以改回一頁 HTML 由 JS 跳轉，並附一顆備援按鈕。
 
 存在的意義：iOS 捷徑只要**一個動作**（打開 URL），不必 POST、不必 URL 編碼。
 
@@ -78,12 +88,12 @@ scheme 可省略，被壓成單斜線（`https:/`）也收得到：
 手動建，只有 **1 個動作**：
 
 1. 捷徑 App → **+** → 加入動作「**打開 URL**」
-2. URL 欄位貼 `https://naver2google.onrender.com/a/`，游標留在最後，
+2. URL 欄位貼 `https://naver2google.onrender.com/m/`，游標留在最後，
    從鍵盤上方變數列插入「**捷徑輸入**」
 3. 重新命名 → ⓘ 打開「在分享表單中顯示」，類型勾 **URL** 和 **文字**
    （Naver Map 分享的是整段文字而非單一網址，只勾 URL 捷徑不會出現在分享表單）
 
-Google 版把 `/a/` 換成 `/g/` 即可。
+Google 版把 `/m/` 換成 `/g/` 即可。
 
 > ### ⚠️ 不能提供「下載就好」的捷徑檔
 > 曾用 `shortcuts/build_shortcuts.py` 產生未簽章的 `.shortcut` 檔給
