@@ -259,3 +259,41 @@ def test_path_redirect_accepts_full_share_text(monkeypatch):
     r = c.get("/a/" + quote(text, safe=""))
     assert r.status_code == 302
     assert "maps.apple.com" in r.headers["Location"]
+
+
+# -- 分享文字沒有連結時的退路 ---------------------------------------------
+def test_convert_share_text_without_link_does_not_crash():
+    """含「[NAVER 地图]」的文字被補上 https:// 後，urlparse 會丟
+    'Invalid IPv6 URL'（方括號被當成 IPv6 主機）。要退回搜尋而不是 502。"""
+    n.convert.cache_clear()
+    r = n.convert("[NAVER 地图]\nN285酒店仁寺洞\n首尔特别市 钟路区 乐园洞 285")
+    assert r["lat"] is None
+    assert "[NAVER" not in r["name"]          # 括號標頭列要被丟掉
+    assert "N285酒店仁寺洞" in r["name"]
+
+
+def test_coords_from_params_survives_bad_url():
+    assert n._coords_from_params("https://[NAVER 地图]/x") is None
+
+
+def test_clean_search_text_drops_bracket_header():
+    assert n._clean_search_text("[NAVER 地图]\nA\nB") == "A B"
+    assert n._clean_search_text("【地圖】\n首爾") == "首爾"
+    assert n._clean_search_text("只有一行") == "只有一行"
+
+
+def test_path_redirect_share_text_without_link(monkeypatch):
+    c = _client(monkeypatch)
+    from urllib.parse import quote
+    r = c.get("/a/" + quote("[NAVER 地图]\nN285酒店仁寺洞", safe=""))
+    assert r.status_code == 302
+    loc = r.headers["Location"]
+    assert "maps.apple.com" in loc and "%5BNAVER" not in loc
+
+
+def test_path_redirect_does_not_prepend_scheme_to_plain_text(monkeypatch):
+    """純文字不能被當網域補 https://，否則 urlparse 直接炸。"""
+    c = _client(monkeypatch)
+    from urllib.parse import quote
+    r = c.get("/a/" + quote("首尔特别市 钟路区 乐园洞 285", safe=""))
+    assert r.status_code == 302

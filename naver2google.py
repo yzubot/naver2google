@@ -85,7 +85,12 @@ def _resolve_short_link(url: str) -> str:
 
 def _coords_from_params(url: str) -> tuple[float, float] | None:
     """Extract lat/lng from URL query parameters."""
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        # 分享文字含「[NAVER 地图]」這種方括號時，urlparse 會把它當 IPv6 主機
+        # 而丟 ValueError（Invalid IPv6 URL）。這裡沒有座標可取，往下一招走。
+        return None
     params = parse_qs(parsed.query)
     if "lat" in params and "lng" in params:
         try:
@@ -154,6 +159,23 @@ def _extract_url(text: str) -> str:
     if m:
         return m.group(1)
     return text
+
+
+def _clean_search_text(text: str) -> str:
+    """把 Naver 分享文字整理成適合當搜尋字串的樣子。
+
+    分享出來長這樣（沒抓到座標時會退回搜尋，直接整段丟出去會很醜也搜不準）：
+
+        [NAVER 地图]
+        N285酒店仁寺洞
+        首尔特别市 钟路区 乐园洞 285
+
+    → 丟掉「[NAVER 地图]」這種括號標頭列，其餘用空白接起來。
+    """
+    lines = [ln.strip() for ln in text.splitlines()]
+    lines = [ln for ln in lines
+             if ln and not re.fullmatch(r"[\[【(（].{0,20}[\]】)）]", ln)]
+    return " ".join(lines) if lines else text.strip()
 
 
 def _build_result(lat: float, lng: float, name: str) -> dict:
@@ -232,7 +254,7 @@ def convert(naver_url: str) -> dict:
         }
 
     # Step 4: fallback — pass as search query
-    query = unquote(url)
+    query = _clean_search_text(unquote(url))
     return {
         "lat": None, "lng": None, "name": query,
         "google_url": f"https://www.google.com/maps/search/{quote(query)}",
@@ -649,7 +671,12 @@ def api_path_redirect(rest: str):
     url = url.strip("`'\"<> \t\u3000")
     url = re.sub(r"^(https?):/{1,2}", r"\1://", url)      # https:/x → https://x
     if not url.startswith(("http://", "https://", "nmap://")):
-        url = "https://" + url
+        # 只有「看起來像裸網域」才補 scheme。分享出來的整段文字（店名、地址、
+        # 甚至「[NAVER 地图]」開頭）不能補——補了會變成 https://[NAVER 地图]…，
+        # urlparse 當成 IPv6 主機直接 ValueError（Invalid IPv6 URL）。
+        # 讓它以原樣進 convert()：裡面會先撈連結，撈不到就當地址搜尋。
+        if re.match(r"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/:?#]|$)", url):
+            url = "https://" + url
     try:
         result = convert(url)
     except NaverUnavailable as e:
