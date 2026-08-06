@@ -39,7 +39,38 @@ Naver Map 網址轉換器 — 將韓國 Naver 地圖連結轉換為 Google Maps 
 
 302 redirect 到 Google Maps（預設）或 Apple Maps（`target=apple`）。
 
-## iPhone 使用方式（Scriptable）
+### `GET|POST /apple`、`GET|POST /google`
+
+**只回一行純文字網址**（不是 JSON），專門給 iOS 捷徑的「打開 URL」直接吃，
+省掉「取得字典值」那一步。四種傳法都收：
+
+```bash
+curl "https://naver2google.onrender.com/apple?url=<NAVER_URL>"
+curl -X POST https://naver2google.onrender.com/apple \
+     -H 'Content-Type: application/json' -d '{"url":"<NAVER_URL>"}'   # 捷徑用這種
+curl -X POST https://naver2google.onrender.com/apple --data-urlencode "url=<NAVER_URL>"
+curl -X POST https://naver2google.onrender.com/apple -d '<NAVER_URL>'
+```
+
+失敗時回純文字訊息 + 400/502/503。
+
+## iPhone 使用方式 A：捷徑（推薦，只要 2 個動作）
+
+線上圖文步驟：**<https://naver2google.onrender.com/shortcut>**
+
+摘要：
+1. 捷徑 App → 新增 →（ⓘ）打開「在分享表單中顯示」，類型只勾 **URL**
+2. 動作「**取得 URL 的內容**」→ URL 填 `https://naver2google.onrender.com/apple`
+   → 方法 **POST**、內文 **JSON**、加一個欄位 `url` = 變數「**捷徑輸入**」
+3. 動作「**打開 URL**」→ 完成
+
+之後在 Naver Map 按分享就會看到這個捷徑，一按直接跳 Apple 地圖。
+想要 Google 版就把網址改成 `/google` 再建一個。
+
+> 沒有提供 iCloud 捷徑連結——那種連結只能由 Apple 裝置產生並上傳。
+> 自己建的好處是不必開「允許不受信任的捷徑」。
+
+## iPhone 使用方式 B（Scriptable）
 
 1. 安裝 [Scriptable](https://apps.apple.com/app/scriptable/id1405459188) app
 2. 建立新腳本，貼上 [`scriptable/Naver2Google.js`](scriptable/Naver2Google.js) 的內容

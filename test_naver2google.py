@@ -78,3 +78,78 @@ def test_convert_naver_down_raises(monkeypatch):
     import pytest
     with pytest.raises(n.NaverUnavailable):
         n.convert("https://naver.me/x")
+
+
+# -- /apple, /google plain-text endpoints (iOS 捷徑用) ---------------------
+def _client(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(
+        n, "_resolve_short_link", lambda u: "https://map.naver.com/p/entry/place/777"
+    )
+    monkeypatch.setattr(
+        n, "_coords_from_place_api",
+        lambda pid: (37.5, 127.0, "테스트") if pid == "777" else None,
+    )
+    n.app.config["TESTING"] = True
+    return n.app.test_client()
+
+
+def test_apple_endpoint_get(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.get("/apple?url=https://naver.me/short")
+    assert r.status_code == 200
+    assert r.mimetype == "text/plain"
+    assert r.get_data(as_text=True).startswith("https://maps.apple.com/?ll=37.5,127.0")
+
+
+def test_apple_endpoint_post_json(monkeypatch):
+    """捷徑「取得 URL 內容」POST + JSON 內文的走法。"""
+    c = _client(monkeypatch)
+    r = c.post("/apple", json={"url": "https://naver.me/short"})
+    assert r.status_code == 200
+    assert "maps.apple.com" in r.get_data(as_text=True)
+
+
+def test_apple_endpoint_post_raw_body(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.post("/apple", data="https://naver.me/short", content_type="text/plain")
+    assert r.status_code == 200
+    assert "maps.apple.com" in r.get_data(as_text=True)
+
+
+def test_apple_endpoint_post_bare_form_body(monkeypatch):
+    """裸網址被當成 form 的「鍵」時也要能取到（curl -d '<url>'）。"""
+    c = _client(monkeypatch)
+    r = c.post("/apple", data="https://naver.me/short",
+               content_type="application/x-www-form-urlencoded")
+    assert r.status_code == 200
+    assert "maps.apple.com" in r.get_data(as_text=True)
+
+
+def test_google_endpoint_post_json(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.post("/google", json={"url": "https://naver.me/short"})
+    assert r.status_code == 200
+    assert "google.com/maps" in r.get_data(as_text=True)
+
+
+def test_plain_endpoint_missing_url(monkeypatch):
+    c = _client(monkeypatch)
+    assert c.get("/apple").status_code == 400
+
+
+def test_plain_endpoint_naver_down(monkeypatch):
+    c = _client(monkeypatch)
+    def boom(_u):
+        raise n.NaverUnavailable("blocked")
+    monkeypatch.setattr(n, "_resolve_short_link", boom)
+    n.convert.cache_clear()
+    assert c.get("/apple?url=https://naver.me/x").status_code == 503
+
+
+def test_shortcut_guide_page(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.get("/shortcut")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "取得 URL 的內容" in body and "/apple" in body
