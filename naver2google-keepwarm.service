@@ -1,0 +1,5 @@
+[Unit]
+Description=keep the public Render naver2google warm (avoid cold start)
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl -fsS --max-time 30 https://naver2google.onrender.com/health

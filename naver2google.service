@@ -1,0 +1,15 @@
+[Unit]
+Description=naver2google — Naver Map→Google/Apple 轉換器 (always-on, no cold start)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vivo
+WorkingDirectory=/home/vivo/clawd/naver2google
+ExecStart=/home/vivo/clawd/naver2google/.venv/bin/gunicorn -w 2 -b 0.0.0.0:8585 naver2google:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

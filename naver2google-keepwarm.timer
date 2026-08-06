@@ -1,0 +1,7 @@
+[Unit]
+Description=ping Render naver2google /health every ~8 min (prevent idle sleep)
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=8min
+[Install]
+WantedBy=timers.target
