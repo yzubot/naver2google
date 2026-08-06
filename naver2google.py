@@ -23,6 +23,7 @@ import requests as http_client
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from flask import Flask, request, jsonify, redirect, Response
+from werkzeug.routing import PathConverter
 
 # ---------------------------------------------------------------------------
 # Naver Place Summary API (no API key needed)
@@ -465,7 +466,12 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
         引號、反引號或空白</b>（貼上時很容易黏到）。</span></li>
       <li>點畫面最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
       <li>點名稱旁邊的 <b>ⓘ</b> → 把「<b>在分享表單中顯示</b>」打開 →
-        下面「分享表單類型」<b>只勾 URL</b>（其他取消）→ 右上角<b>完成</b></li>
+        下面「分享表單類型」要勾 <b>URL</b> <u>和</u> <b>文字</b>
+        → 右上角<b>完成</b>
+        <div class="warn" style="margin-top:8px">⚠️ <b>「文字」一定要勾。</b>
+        Naver Map 分享出來的其實是一整段文字（店名＋地址＋短連結），
+        不是單純一個網址——<b>只勾 URL 的話，捷徑根本不會出現在分享表單裡</b>。
+        伺服器會自己從那段文字裡把連結挑出來，所以勾了不會有副作用。</div></li>
     </ol>
     <div class="note"><b>好了。</b>到 Naver Map 開任一地點 → <b>分享</b> →
     往下滑找到「用 Apple 地圖開啟」→ 直接跳進 Apple 地圖。<br>
@@ -610,8 +616,22 @@ def api_plain():
                     content_type="text/plain; charset=utf-8")
 
 
-@app.route("/a/<path:rest>")
-@app.route("/g/<path:rest>")
+class _AnyTextConverter(PathConverter):
+    """像 <path:> 但也吃換行。
+
+    Naver Map 的「分享」給出來的是**整段文字**（標題+地址+短連結），不是單一
+    網址。捷徑把它塞進 URL 後換行會編成 %0A，Flask 解碼後預設的 <path:> 比對
+    不到（它的 `.` 不匹配換行）→ 整條路由 404。用 [\\s\\S] 明確納入換行。
+    """
+
+    regex = r"[^/][\s\S]*"
+
+
+app.url_map.converters["anytext"] = _AnyTextConverter
+
+
+@app.route("/a/<anytext:rest>")
+@app.route("/g/<anytext:rest>")
 def api_path_redirect(rest: str):
     """把 Naver 網址直接接在路徑後面 → 302 到 Apple/Google 地圖。
 

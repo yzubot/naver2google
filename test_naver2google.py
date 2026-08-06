@@ -247,3 +247,15 @@ def test_index_newline_split_is_escaped(monkeypatch):
     c = _client(monkeypatch)
     body = c.get("/").get_data(as_text=True)
     assert r"split('\n')" in body      # 送到瀏覽器的必須是反斜線+n
+
+
+def test_path_redirect_accepts_full_share_text(monkeypatch):
+    """Naver Map 分享出來的是整段文字（標題+地址+短連結），不是單一網址。
+    換行會被編成 %0A，預設的 <path:> 比對不到 → 曾整條路由 404。"""
+    c = _client(monkeypatch)
+    text = ("[NAVER 地图]\nN285酒店仁寺洞\n首尔特别市 钟路区 乐园洞 285\n"
+            "https://naver.me/short")
+    from urllib.parse import quote
+    r = c.get("/a/" + quote(text, safe=""))
+    assert r.status_code == 302
+    assert "maps.apple.com" in r.headers["Location"]
