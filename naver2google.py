@@ -901,22 +901,25 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
   </div>
 
   <div class="card">
-    <h2>進階：完全不想看到 Safari 閃一下</h2>
-    <p class="dim"><code>/m/</code> 是靠一頁極短的中繼頁把 <code>maps://</code>
-    交給「地圖」App，理論上你會看到 Safari 閃一下。真的很在意的話，
-    可以改成 4 個動作、全程不碰瀏覽器：</p>
+    <h2>進階：連 Safari 閃一下都不要</h2>
+    <p class="dim">上面那版是靠一頁極短的中繼頁把 <code>maps://</code> 交給
+    「地圖」App，所以會看到瀏覽器閃一下。想完全不碰瀏覽器的話，
+    改成 <b>4 個動作</b>——讓捷徑<b>自己</b>拿到 <code>maps://</code> 再打開它：</p>
     <ol class="steps" style="margin-top:8px">
-      <li>「<b>文字</b>」→ 內容選「<b>捷徑輸入</b>」
-        <span class="dim">（Naver 一次送兩筆：文字＋place id，這步把它們壓成一段）</span></li>
+      <li>「<b>URL 編碼</b>」→ 輸入選「<b>捷徑輸入</b>」（維持「編碼」）</li>
       <li>「<b>取得 URL 內容</b>」→ 網址
-        <code>https://naver2google.onrender.com/aj/</code> 後面接上一步的「<b>文字</b>」
-        <span class="dim">（方式維持 GET，其他都不用動）</span></li>
-      <li>「<b>取得字典值</b>」→ 鍵打 <code>url</code></li>
-      <li>「<b>打開 URL</b>」→ 放上一步的「字典值」</li>
+        <code>https://naver2google.onrender.com/mj/</code> 後面接上一步的
+        「<b>URL 編碼過的文字</b>」<span class="dim">（方式維持 GET）</span></li>
+      <li>「<b>取得字典值</b>」→ <b>取得</b>選「值」、<b>鍵</b>打 <code>url</code></li>
+      <li>「<b>打開 URL</b>」→ 放上一步的「<b>字典值</b>」</li>
     </ol>
-    <p class="dim" style="margin-top:8px">為什麼要「取得字典值」而不是直接打開：
-    伺服器如果回純文字，捷徑會把它認成 <b>richtext</b>，「打開 URL」就噴
-    「無法從『RTF』轉換到『URL』」。走 JSON 就沒這問題。</p>
+    <p class="dim" style="margin-top:8px">
+    <code>/mj/</code> 回的是 <code>{"url": "maps://?ll=…"}</code>，
+    捷徑「打開 URL」拿到 App scheme 會直接交給「地圖」App，全程不開瀏覽器。
+    <br>為什麼要「取得字典值」而不是直接打開：伺服器如果回純文字，捷徑會把它
+    認成 <b>richtext</b>，「打開 URL」就噴「無法從『RTF』轉換到『URL』」。
+    走 JSON 就沒這問題。轉不出來時 <code>/mj/</code> 會改回 https 的說明頁網址，
+    不會把你丟進地圖 App 的隨便一頁。</p>
   </div>
 
   <div class="card">
@@ -1202,6 +1205,7 @@ def _url_from_path(rest: str) -> str:
 
 @app.route("/aj/<anytext:rest>")
 @app.route("/gj/<anytext:rest>")
+@app.route("/mj/<anytext:rest>")
 def api_path_json(rest: str):
     """同 `/a/`，但回 `{"url": …}` —— 給 iOS 捷徑「取得字典值」用。
 
@@ -1215,6 +1219,9 @@ def api_path_json(rest: str):
         打開 URL
     """
     target = "google" if request.path.startswith("/gj/") else "apple"
+    # /mj/ 回 `maps://…`：捷徑「打開 URL」拿到 App scheme 會**直接**交給
+    # 「地圖」App，連 Safari 都不會閃——/m/ 那頁中繼頁就是省不掉這一閃。
+    as_app = request.path.startswith("/mj/")
     url = _url_from_path(rest)
     try:
         result = convert(url)
@@ -1227,8 +1234,10 @@ def api_path_json(rest: str):
         msg = f"解析失敗：{e}"
         return jsonify({"url": _fallback_url(msg, url), "error": msg})
     if not result.get("verified"):
+        # 失敗時給 https 的說明頁，不能給 maps://（那會把人丟進地圖 App 的隨便一頁）
         return jsonify({"url": _fallback_url(UNVERIFIED_MSG, url), "error": UNVERIFIED_MSG})
-    return jsonify({"url": result[f"{target}_url"]})
+    dest = result[f"{target}_url"]
+    return jsonify({"url": _app_scheme(dest) if as_app else dest})
 
 
 @app.route("/a/<anytext:rest>")

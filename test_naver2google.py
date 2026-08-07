@@ -160,18 +160,17 @@ def test_shortcut_guide_page(monkeypatch):
 
 
 def test_shortcut_guide_teaches_the_no_safari_flow():
-    """一個動作的 /a/ 會先開 Safari（universal link 不吃跨網域轉址）；
-    教學必須是「先取得最終網址，再打開它」的兩動作版。"""
+    """/a/ 的跨網域 302 不會觸發 universal link，只會停在 Safari；
+    教學要教 App scheme（/m/）與完全不碰瀏覽器的 /mj/ 版。"""
     body = n.SHORTCUT_HTML
-    # 主推：一個動作 + /m/（App scheme，不經過 Safari）
+    # 主推：URL 編碼 + /m/（中繼頁把 maps:// 交給地圖 App）
     assert "https://naver2google.onrender.com/m/" in body
     assert "2 個動作" in body and "不會經過 Safari" in body
     # 沒有 URL 編碼，iOS 會在第一個空格切掉網址——教學一定要教這步
     assert "URL 編碼" in body and "[NAVER" in body
-    # 進階版（完全不碰瀏覽器）也要留著，含它的兩個坑
-    assert "https://naver2google.onrender.com/aj/" in body
+    # 進階版：/mj/ 直接回 maps://，全程不開瀏覽器
+    assert "https://naver2google.onrender.com/mj/" in body
     assert "取得字典值" in body and "RTF" in body
-    assert "兩筆" in body                      # Naver 一次送文字＋place id
 
 
 # -- /a/ /g/ 一個動作用的路徑轉址 -------------------------------------------
@@ -861,3 +860,27 @@ def test_fully_encoded_share_text_still_works(monkeypatch):
     r = n.app.test_client().get("/m/" + quote(payload, safe=""))
     assert r.status_code == 200
     assert "maps://?ll=37.5724089,126.987433" in r.get_data(as_text=True)
+
+
+
+# -- /mj/：捷徑直接拿到 maps://，連 Safari 都不閃 -----------------------------
+def test_mj_returns_app_scheme(monkeypatch):
+    c = _client(monkeypatch)
+    r = c.get("/mj/https://naver.me/short")
+    assert r.status_code == 200 and r.mimetype == "application/json"
+    assert r.get_json()["url"].startswith("maps://?ll=37.5,127.0")
+
+
+def test_mj_failure_gives_https_not_app_scheme(monkeypatch):
+    """失敗時要給 https 說明頁——給 maps:// 會把人丟進地圖 App 的隨便一頁。"""
+    n.convert.cache_clear()
+    n.app.config["TESTING"] = True
+    d = n.app.test_client().get("/mj/[NAVER").get_json()
+    assert d["url"].startswith("http") and "maps://" not in d["url"]
+    assert "截斷" in d["error"]
+
+
+def test_aj_still_returns_https(monkeypatch):
+    """/aj/ 維持 https（給想用 universal link 的人）。"""
+    c = _client(monkeypatch)
+    assert c.get("/aj/https://naver.me/short").get_json()["url"].startswith("https://maps.apple.com/")
