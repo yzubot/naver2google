@@ -17,7 +17,7 @@ import argparse
 import json
 import os
 import re
-from functools import lru_cache
+import time
 from urllib.parse import urlparse, parse_qs, quote, unquote
 
 import requests as http_client
@@ -125,7 +125,16 @@ def _extract_place_id(url: str) -> str | None:
     if m:
         return m.group(1)
     m = _PLACE_HOST_ID.search(url)
-    return m.group(1) if m else None
+    if m:
+        return m.group(1)
+    # The Naver *app* shares `nmap://place?id=12345&appMenu=location` — the id
+    # lives in a query param, so the path-based patterns above see nothing and
+    # the whole link used to fall through to a blind text search.
+    if url.startswith("nmap://") or "naver." in url:
+        m = re.search(r"[?&](?:place[iI]d|id)=(\d{5,})", url)
+        if m:
+            return m.group(1)
+    return None
 
 
 def _coords_from_place_api(place_id: str) -> tuple[float, float, str] | None:
@@ -187,6 +196,31 @@ def _coords_from_map_params(url: str) -> tuple[float, float] | None:
         return float(params["y"][0]), float(params["x"][0])
     except (KeyError, ValueError, IndexError):
         return None
+
+
+def _coords_from_directions(url: str) -> tuple[float, float, str] | None:
+    """Destination of a shared route link.
+
+    `/p/directions/<lng>,<lat>,<名稱>,<id>,<type>/<同樣格式的終點>/-/<交通方式>`
+    — sharing a route instead of a pin is an easy mistake to make in the app,
+    and without this the whole link has nothing to geocode. Take the **last**
+    segment that carries coordinates: that's where the user is going.
+    """
+    m = re.search(r"/directions/(.+?)(?:/-/|$|\?)", url)
+    if not m:
+        return None
+    best = None
+    for seg in m.group(1).split("/"):
+        parts = seg.split(",")
+        if len(parts) < 2:
+            continue
+        try:
+            lng, lat = float(parts[0]), float(parts[1])
+        except ValueError:
+            continue
+        if abs(lng) <= 180 and abs(lat) <= 90:
+            best = (lat, lng, unquote(parts[2]).strip() if len(parts) > 2 else "")
+    return best
 
 
 SEARCH_PAGE = "https://m.map.naver.com/search2/search.naver?query={}&sm=hty&style=v5"
@@ -267,7 +301,10 @@ def _score_place(place: dict, query: str) -> int:
     return score
 
 
-@lru_cache(maxsize=256)
+# Successful lookups only — see _search_naver.
+_SEARCH_CACHE: dict[str, tuple[float, float, str]] = {}
+
+
 def _search_naver(query: str) -> tuple[float, float, str] | None:
     """Geocode 店名／地址 through Naver's own search → exact coordinates.
 
@@ -275,35 +312,34 @@ def _search_naver(query: str) -> tuple[float, float, str] | None:
     location, so a Korean店名 can match something else entirely. Naver knows
     exactly which place the share text meant — resolve it here, then send the
     map app coordinates instead of a guess.
+
+    Deliberately **not** @lru_cache: a miss here is almost always transient
+    (Naver rate-limiting a burst), and caching it would poison that query for
+    the whole process lifetime — the link would keep degrading to a blind
+    search long after Naver recovered. Only hits are memoised.
     """
     query = query.strip()
     if not query:
         return None
-    try:
-        resp = SESSION.get(SEARCH_PAGE.format(quote(query)), timeout=10)
-    except http_client.RequestException:
-        return None  # 純加分路徑：查不到就退回文字搜尋，不要讓整條轉換失敗
-    if resp.status_code != 200:
-        return None
-
-
-@lru_cache(maxsize=256)
-def _search_naver(query: str) -> tuple[float, float, str] | None:
-    """Geocode 店名／地址 through Naver's own search → exact coordinates.
-
-    Why not just hand the text to Apple/Google: they rank by *the user's*
-    location, so a Korean店名 can match something else entirely. Naver knows
-    exactly which place the share text meant — resolve it here, then send the
-    map app coordinates instead of a guess.
-    """
-    query = query.strip()
-    if not query:
-        return None
-    try:
-        resp = SESSION.get(SEARCH_PAGE.format(quote(query)), timeout=10)
-    except http_client.RequestException:
-        return None  # 純加分路徑：查不到就退回文字搜尋，不要讓整條轉換失敗
-    if resp.status_code != 200:
+    cached = _SEARCH_CACHE.get(query)
+    if cached:
+        return cached
+    # This endpoint throws sporadic 500s that clear on their own — measured:
+    # a query that 500s will usually 200 a second later. The session's own
+    # retries can be exhausted by a burst, so pause and give it one more go
+    # rather than silently degrading to a blind search.
+    resp = None
+    for attempt in range(3):
+        if attempt:
+            time.sleep(0.6 * attempt)   # 0s → 0.6s → 1.2s
+        try:
+            resp = SESSION.get(SEARCH_PAGE.format(quote(query)), timeout=10)
+        except http_client.RequestException:
+            resp = None            # 純加分路徑：失敗就退回文字搜尋，不要炸掉轉換
+            continue
+        if resp.status_code == 200:
+            break
+    if resp is None or resp.status_code != 200:
         return None
     places: list[dict] = []
     for blob in _iter_state_blobs(resp.text):
@@ -312,7 +348,46 @@ def _search_naver(query: str) -> tuple[float, float, str] | None:
         return None
     # max() keeps the first of equal scores → ties fall back to Naver's ranking.
     best = max(places, key=lambda p: _score_place(p, query))
-    return best["lat"], best["lng"], best["name"]
+    hit = (best["lat"], best["lng"], best["name"])
+    if len(_SEARCH_CACHE) >= 512:
+        _SEARCH_CACHE.clear()          # 粗暴但夠用：避免長跑無上限成長
+    _SEARCH_CACHE[query] = hit
+    return hit
+
+
+def _search_candidates(raw: str) -> list[str]:
+    """Query variants to try, most specific first.
+
+    Naver returns **zero results** for 「店名 + 完整地址」 pasted as one string —
+    exactly what the share sheet produces. Searching the whole blob, then the
+    店名 line alone, then the address line, is what a human would do and is the
+    difference between an exact pin and falling back to a blind search.
+    """
+    lines = [_strip_urls(ln.strip()) for ln in raw.splitlines()]
+    lines = [ln for ln in lines
+             if ln and not re.fullmatch(r"[\[【(（].{0,20}[\]】)）]", ln)]
+    joined = " ".join(lines)
+    out, seen = [], set()
+    for cand in [joined, *lines]:
+        if cand and cand not in seen:
+            seen.add(cand)
+            out.append(cand)
+    return out[:3]
+
+
+def _search_naver_best(raw: str) -> tuple[float, float, str] | None:
+    """Try each query variant; keep the hit that best matches the share text."""
+    best, best_score = None, -1
+    for cand in _search_candidates(raw):
+        hit = _search_naver(cand)
+        if not hit:
+            continue
+        score = _score_place({"name": hit[2], "address": ""}, cand)
+        if score > best_score:
+            best, best_score = hit, score
+        if best_score >= 60:      # 店名對上了就別再多打 Naver 一次
+            break
+    return best
 
 
 def _coords_from_at_pattern(url: str) -> tuple[float, float] | None:
@@ -355,23 +430,6 @@ def _app_scheme(apple_url: str) -> str:
     return re.sub(r"^https://maps\.apple\.com/", "maps://", apple_url)
 
 
-def _clean_search_text(text: str) -> str:
-    """把 Naver 分享文字整理成適合當搜尋字串的樣子。
-
-    分享出來長這樣（沒抓到座標時會退回搜尋，直接整段丟出去會很醜也搜不準）：
-
-        [NAVER 地图]
-        N285酒店仁寺洞
-        首尔特别市 钟路区 乐园洞 285
-
-    → 丟掉「[NAVER 地图]」這種括號標頭列，其餘用空白接起來。
-    """
-    lines = [ln.strip() for ln in text.splitlines()]
-    lines = [ln for ln in lines
-             if ln and not re.fullmatch(r"[\[【(（].{0,20}[\]】)）]", ln)]
-    return " ".join(lines) if lines else text.strip()
-
-
 _URL_TOKEN = re.compile(r"\S*(?:https?://|nmap://|naver\.me/|naver\.com/)\S*")
 
 
@@ -407,7 +465,7 @@ def _build_result(lat: float, lng: float, name: str) -> dict:
         google_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
         apple_url = f"https://maps.apple.com/?ll={lat},{lng}&q={lat},{lng}"
     return {
-        "lat": lat, "lng": lng, "name": name,
+        "lat": lat, "lng": lng, "name": name, "verified": True,
         "google_url": google_url, "apple_url": apple_url,
     }
 
@@ -421,7 +479,11 @@ def _search_result(query: str) -> dict:
     """
     q = quote(query)
     return {
-        "lat": None, "lng": None, "name": query,
+        # verified=False: nobody confirmed where this text actually is. Measured:
+        # a Korea-biased Apple search for 「명동교자 본점 + 地址」 lands 300km away in
+        # 통영. Good enough to *offer* in the web UI, never good enough to
+        # silently redirect someone to.
+        "lat": None, "lng": None, "name": query, "verified": False,
         # `ll` + `z` bias Google's search viewport to the Korean peninsula.
         "google_url": f"https://www.google.com/maps/search/{q}/@36.5,127.9,7z",
         # `sll`/`sspn` = "search around here, this wide" (Apple's search-region params).
@@ -429,24 +491,43 @@ def _search_result(query: str) -> dict:
     }
 
 
-def _resolve_by_text(query: str) -> dict:
+def _resolve_by_text(text: str) -> dict:
     """No coordinates in the link — ask Naver where this text is, and only if
     Naver can't say, fall back to letting the map app search it."""
-    hit = _search_naver(query)
+    hit = _search_naver_best(text)
     if hit:
         lat, lng, name = hit
         return _build_result(lat, lng, name)
-    return _search_result(query)
+    candidates = _search_candidates(text)
+    return _search_result(candidates[0] if candidates else text.strip())
 
 
-@lru_cache(maxsize=512)
+_CONVERT_CACHE: dict[str, dict] = {}
+
+
 def convert(naver_url: str) -> dict:
     """Main conversion: Naver URL → {lat, lng, name, google_url, apple_url}.
 
-    Cached per input (identical link → instant repeat). NaverUnavailable
-    propagates (transient — not cached by lru_cache); unparseable links fall
-    through to a text-search result rather than erroring.
+    Only *coordinate-bearing* results are cached. A blind-search result means
+    something upstream was having a bad minute (Naver rate-limited us); caching
+    it would keep serving the degraded answer for the life of the process, so
+    those are recomputed every time instead.
     """
+    cached = _CONVERT_CACHE.get(naver_url)
+    if cached:
+        return cached
+    result = _convert(naver_url)
+    if result.get("lat") is not None:
+        if len(_CONVERT_CACHE) >= 512:
+            _CONVERT_CACHE.clear()
+        _CONVERT_CACHE[naver_url] = result
+    return result
+
+
+convert.cache_clear = lambda: (_CONVERT_CACHE.clear(), _SEARCH_CACHE.clear())
+
+
+def _convert(naver_url: str) -> dict:
     raw = naver_url.strip()
     if not raw:
         return {"error": "空的輸入"}
@@ -495,6 +576,12 @@ def convert(naver_url: str) -> dict:
     if addr_match:
         return _resolve_by_text(unquote(addr_match.group(1)).strip())
 
+    # Step 3.55: a route link (/p/directions/<from>/<to>/…) — take the destination
+    coords = _coords_from_directions(url)
+    if coords:
+        lat, lng, name = coords
+        return _build_result(lat, lng, name)
+
     # Step 3.6: a search URL (/p/search/<query>) — geocode the query itself
     search_match = re.search(r"/(?:p/)?search/([^/?#]+)", url)
     if search_match:
@@ -503,13 +590,13 @@ def convert(naver_url: str) -> dict:
     # Step 4: fallback — search the *human* part of the share text (店名+地址).
     # Never the URL itself: searching "https://naver.me/xxxx" makes the map app
     # match some unrelated place near the user (Taiwan) instead of Korea.
-    query = _clean_search_text(unquote(raw))
-    query = _strip_urls(query)
-    if not query:
+    # Keep the line breaks: _search_candidates needs them to peel 店名 off 地址.
+    text = unquote(raw)
+    if not _search_candidates(text):
         raise ConversionFailed(
             "這條連結抓不到座標，也沒有店名／地址可以搜尋。"
             "請改用 Naver 地圖的「分享」整段文字，或換一條 place 連結。")
-    return _resolve_by_text(query)
+    return _resolve_by_text(text)
 
 
 # ---------------------------------------------------------------------------
@@ -591,17 +678,20 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
   </div>
 </div>
 <script>
-const LINKRE=/(https?:[/][/](?:naver[.]me|m?[.]?map[.]naver[.]com)\\S+|nmap:[/][/]\\S+)/g;
+// No /g flag on purpose: a global regex keeps `lastIndex` between .test() calls,
+// so filtering a list silently skips every other line — pasting 2 links used to
+// convert only the first one.
+const LINKRE=/(https?:[/][/](?:naver[.]me|[\\w.-]*naver[.]com)\\S+|nmap:[/][/]\\S+)/;
 function linkLines(text){
   // one entry per line that contains a Naver link; if none, treat whole box as 1
   const lines=text.split('\\n').map(s=>s.trim()).filter(Boolean);
   const withLinks=lines.filter(l=>LINKRE.test(l));
-  LINKRE.lastIndex=0;
   return withLinks.length>=2?withLinks:null;
 }
 function card(d){
   const name=(d.name||'(無名稱)');
-  const coords=d.lat!=null?`${d.lat}, ${d.lng}`:'(以文字搜尋)';
+  const coords=d.lat!=null?`${d.lat}, ${d.lng}`
+    :'⚠️ 查不到座標，以下只是文字搜尋，位置可能不對';
   if(d.error) return `<div class="card"><div class="name">⚠️ ${d.input||''}</div>
     <div class="error" style="display:block">${d.error}</div></div>`;
   return `<div class="card"><div class="name">${name}</div>
@@ -631,7 +721,8 @@ async function doConvert(){
     const d=await r.json();ld.style.display='none';
     if(d.error){ea.textContent=d.error;ea.style.display='block';return}
     ra.innerHTML=`<div class="name" id="r-name">${d.name||'(無名稱)'}</div>
-      <div class="coords">${d.lat!=null?d.lat+', '+d.lng:'(以文字搜尋)'}</div>
+      <div class="coords">${d.lat!=null?d.lat+', '+d.lng
+        :'⚠️ 查不到座標，以下只是文字搜尋，位置可能不對'}</div>
       <a class="btn-open btn-google" target="_blank" href="${d.google_url}">在 Google Maps 開啟</a>
       <a class="btn-open btn-apple" target="_blank" href="${d.apple_url}">在 Apple Maps 開啟</a>`;
     ra.style.display='block';
@@ -897,7 +988,27 @@ def api_plain():
     except Exception as e:  # noqa: BLE001
         return Response(f"解析失敗：{e}", status=502,
                         content_type="text/plain; charset=utf-8")
-    return Response(result[f"{target}_url"],
+    return _unverified(result) or Response(
+        result[f"{target}_url"], content_type="text/plain; charset=utf-8")
+
+
+UNVERIFIED_MSG = (
+    "查不到這個地點的座標（Naver 可能暫時沒回應）。\n"
+    "為了不要把你導到錯的地方，這裡就不轉址了 —— 請過幾秒再試一次，"
+    "或改用網頁版看看搜尋結果對不對。"
+)
+
+
+def _unverified(result: dict):
+    """Redirect endpoints must never teleport someone to an unconfirmed guess.
+
+    A text-search result is exactly that: measured drift of ~300km on a real
+    share blob. The web UI may still show it (the user can read the name and
+    judge); a shortcut that opens the map app cannot.
+    """
+    if result.get("verified"):
+        return None
+    return Response(UNVERIFIED_MSG, status=422,
                     content_type="text/plain; charset=utf-8")
 
 
@@ -957,6 +1068,9 @@ def api_path_redirect(rest: str):
     except Exception as e:  # noqa: BLE001
         return Response(f"解析失敗：{e}", status=502,
                         content_type="text/plain; charset=utf-8")
+    bail = _unverified(result)
+    if bail:
+        return bail
     dest = result[f"{target}_url"]
     if not app_scheme:
         return redirect(dest)
@@ -1023,6 +1137,9 @@ def api_go():
         result = convert(url)
         if "error" in result:
             return f"Error: {result['error']}", 422
+        bail = _unverified(result)
+        if bail:
+            return bail
         return redirect(result["apple_url"] if target == "apple"
                         else result["google_url"])
     except NaverUnavailable as e:

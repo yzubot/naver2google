@@ -264,9 +264,10 @@ def test_path_redirect_accepts_full_share_text(monkeypatch):
 
 
 # -- 分享文字沒有連結時的退路 ---------------------------------------------
-def test_convert_share_text_without_link_does_not_crash():
+def test_convert_share_text_without_link_does_not_crash(monkeypatch):
     """含「[NAVER 地图]」的文字被補上 https:// 後，urlparse 會丟
     'Invalid IPv6 URL'（方括號被當成 IPv6 主機）。要退回搜尋而不是 502。"""
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)   # 不打真的網路
     n.convert.cache_clear()
     r = n.convert("[NAVER 地图]\nN285酒店仁寺洞\n首尔特别市 钟路区 乐园洞 285")
     assert r["lat"] is None
@@ -278,27 +279,33 @@ def test_coords_from_params_survives_bad_url():
     assert n._coords_from_params("https://[NAVER 地图]/x") is None
 
 
-def test_clean_search_text_drops_bracket_header():
-    assert n._clean_search_text("[NAVER 地图]\nA\nB") == "A B"
-    assert n._clean_search_text("【地圖】\n首爾") == "首爾"
-    assert n._clean_search_text("只有一行") == "只有一行"
+def test_search_candidates_drop_bracket_header_and_urls():
+    """候選查詢：整段 → 店名 → 地址；「[NAVER 地图]」標頭列和網址都要丟掉。"""
+    assert n._search_candidates("[NAVER 地图]\nA\nB") == ["A B", "A", "B"]
+    assert n._search_candidates("【地圖】\n首爾") == ["首爾"]
+    assert n._search_candidates("只有一行") == ["只有一行"]
+    assert n._search_candidates("店名\nhttps://naver.me/x") == ["店名"]
 
 
 def test_path_redirect_share_text_without_link(monkeypatch):
     c = _client(monkeypatch)
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)   # 不打真的網路
     from urllib.parse import quote
     r = c.get("/a/" + quote("[NAVER 地图]\nN285酒店仁寺洞", safe=""))
-    assert r.status_code == 302
-    loc = r.headers["Location"]
-    assert "maps.apple.com" in loc and "%5BNAVER" not in loc
+    # Naver 查不到座標時「不轉址」才是對的（302 到未驗證的搜尋 = 可能送錯地方），
+    # 重點是不能 500/502，也不能把「[NAVER 地图]」當網域去解析。
+    assert r.status_code == 422
+    assert "Location" not in r.headers
+    assert "不轉址" in r.get_data(as_text=True)
 
 
 def test_path_redirect_does_not_prepend_scheme_to_plain_text(monkeypatch):
     """純文字不能被當網域補 https://，否則 urlparse 直接炸。"""
     c = _client(monkeypatch)
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)   # 不打真的網路
     from urllib.parse import quote
     r = c.get("/a/" + quote("首尔特别市 钟路区 乐园洞 285", safe=""))
-    assert r.status_code == 302
+    assert r.status_code == 422       # 未驗證就不轉址；重點是沒有 502(urlparse 炸掉)
 
 
 # -- /m/ App scheme（universal link 不會因跨網域 302 而觸發）----------------
@@ -424,7 +431,7 @@ def test_search_naver_returns_exact_coords(monkeypatch):
         status_code = 200
         text = _SEARCH_HTML
     monkeypatch.setattr(n.SESSION, "get", lambda *a, **k: _Resp())
-    n._search_naver.cache_clear()
+    n._SEARCH_CACHE.clear()
     assert n._search_naver("N285호텔 인사동") == (37.5724089, 126.987433, "N285호텔 인사동")
 
 
@@ -440,7 +447,8 @@ def test_search_naver_network_error_is_not_fatal(monkeypatch):
     def boom(*a, **k):
         raise requests.RequestException("down")
     monkeypatch.setattr(n.SESSION, "get", boom)
-    n._search_naver.cache_clear()
+    monkeypatch.setattr(n.time, "sleep", lambda _s: None)
+    n._SEARCH_CACHE.clear()
     assert n._search_naver("아무거나") is None          # 加分路徑失敗不該炸掉整條轉換
 
 
@@ -459,7 +467,7 @@ def test_search_naver_skips_the_paid_listing(monkeypatch):
         status_code = 200
         text = _AD_FIRST_HTML
     monkeypatch.setattr(n.SESSION, "get", lambda *a, **k: _Resp())
-    n._search_naver.cache_clear()
+    n._SEARCH_CACHE.clear()
     assert n._search_naver("명동교자") == (37.5634828, 126.9851666, "명동교자 1호점")
 
 
@@ -469,7 +477,7 @@ def test_search_naver_keeps_naver_order_when_nothing_matches(monkeypatch):
         status_code = 200
         text = _AD_FIRST_HTML
     monkeypatch.setattr(n.SESSION, "get", lambda *a, **k: _Resp())
-    n._search_naver.cache_clear()
+    n._SEARCH_CACHE.clear()
     assert n._search_naver("zzz")[2] == "강남교자 센터원점"
 
 
@@ -479,3 +487,154 @@ def test_score_prefers_full_name_inside_share_text():
     nearby = {"name": "더하노이풋앤바디 N285호텔 인사동점",
               "address": "서울특별시 종로구 낙원동 285 지하2층"}
     assert n._score_place(exact, share) > n._score_place(nearby, share)
+
+
+# -- 快取不可以把「暫時失敗」變成永久錯誤 ------------------------------------
+def test_search_cache_does_not_memoise_misses(monkeypatch):
+    """Naver 擋一次就快取 None 的話，那條連結會永遠退化成盲目搜尋。"""
+    calls = {"n": 0}
+    class _Fail:
+        status_code = 429
+        text = ""
+    class _Ok:
+        status_code = 200
+        text = _SEARCH_HTML
+    def get(*a, **k):
+        calls["n"] += 1
+        return _Fail() if calls["n"] <= 3 else _Ok()   # 三次 attempt 都被擋
+    monkeypatch.setattr(n.SESSION, "get", get)
+    monkeypatch.setattr(n.time, "sleep", lambda _s: None)
+    n._SEARCH_CACHE.clear()
+    assert n._search_naver("N285호텔 인사동") is None      # 這一輪被擋
+    assert n._search_naver("N285호텔 인사동") is not None  # 下一次必須重打，不能記住失敗
+
+
+def test_convert_does_not_cache_blind_search_results(monkeypatch):
+    """沒座標的結果代表上游剛好出包，不能快取成永久答案。"""
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
+    n.convert.cache_clear()
+    r1 = n.convert("서울특별시 중구 저동2가 89")
+    assert r1["lat"] is None
+    assert "서울특별시 중구 저동2가 89" not in n._CONVERT_CACHE
+    monkeypatch.setattr(n, "_search_naver", lambda q: (37.5, 127.0, "복구됨"))
+    assert n.convert("서울특별시 중구 저동2가 89")["lat"] == 37.5   # 上游恢復就要跟著恢復
+
+
+def test_convert_caches_successful_lookups(monkeypatch):
+    monkeypatch.setattr(n, "_search_naver", lambda q: (37.5, 127.0, "테스트"))
+    n.convert.cache_clear()
+    n.convert("경복궁")
+    assert n._CONVERT_CACHE["경복궁"]["lat"] == 37.5
+
+
+# -- nmap:// （Naver App 分享出來的 scheme） ---------------------------------
+def test_place_id_from_nmap_scheme():
+    """Naver App 分享的是 nmap://place?id=…，id 在 query param 不在路徑上。"""
+    assert n._extract_place_id("nmap://place?id=1186111517&appMenu=location") == "1186111517"
+    assert n._extract_place_id("nmap://place?lat=37.5&id=11571707") == "11571707"
+
+
+def test_place_id_param_not_grabbed_from_random_hosts():
+    """別把不相干網站的 ?id= 當成 Naver place id。"""
+    assert n._extract_place_id("https://example.com/x?id=1234567") is None
+
+
+def test_convert_nmap_scheme_end_to_end(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_coords_from_place_api",
+                        lambda pid: (37.5724089, 126.987433, "N285호텔 인사동")
+                        if pid == "1186111517" else None)
+    r = n.convert("nmap://place?id=1186111517&appMenu=location")
+    assert r["lat"] == 37.5724089
+
+
+# -- 網頁 UI 的批次模式（回歸：只轉了第一條） --------------------------------
+def test_index_link_regex_is_not_global():
+    """/g 讓 .test() 記住 lastIndex → filter 每隔一行就漏 → 貼兩條只轉第一條。
+
+    這條只能靠讀樣板守：JS 的行為單元測試看不到（實際點擊由
+    scripts/ui_check.py 用 Playwright 驗）。
+    """
+    import re as _re
+    m = _re.search(r"const LINKRE=/.*?/(\w*);", n.INDEX_HTML)
+    assert m, "找不到 LINKRE，樣板改過就要更新這條測試"
+    assert "g" not in m.group(1), "LINKRE 不能有 /g 旗標"
+
+
+def test_index_link_regex_matches_place_hosts():
+    """批次判斷也要認得 m.place.naver.com，否則多條 place 連結不會走批次。"""
+    import re as _re
+    m = _re.search(r"const LINKRE=/(.*?)/\w*;", n.INDEX_HTML)
+    pattern = m.group(1).replace("\\\\", "\\")
+    for url in ("https://naver.me/abc", "https://m.place.naver.com/restaurant/1/home",
+                "https://map.naver.com/p/entry/place/1", "nmap://place?id=1"):
+        assert _re.search(pattern, url), url
+
+
+# -- 未驗證的結果一律不轉址（捷徑會直接把人傳送過去） --------------------------
+def test_redirect_refuses_unverified_result(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)   # Naver 查不到
+    monkeypatch.setattr(n, "_resolve_short_link", lambda u: u)
+    n.app.config["TESTING"] = True
+    c = n.app.test_client()
+    for path in ("/a/", "/g/", "/m/"):
+        r = c.get(path + "서울특별시 중구 저동2가 89")
+        assert r.status_code == 422, path
+        assert "Location" not in r.headers, path
+
+
+def test_plain_endpoints_refuse_unverified_result(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
+    n.app.config["TESTING"] = True
+    c = n.app.test_client()
+    for path in ("/apple", "/google"):
+        r = c.get(path, query_string={"url": "서울특별시 중구 저동2가 89"})
+        assert r.status_code == 422, path
+        assert "maps.apple.com" not in r.get_data(as_text=True), path
+
+
+def test_go_endpoint_refuses_unverified_result(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
+    n.app.config["TESTING"] = True
+    r = n.app.test_client().get("/go", query_string={"url": "서울특별시 중구 저동2가 89"})
+    assert r.status_code == 422 and "Location" not in r.headers
+
+
+def test_convert_json_still_returns_unverified_for_the_web_ui(monkeypatch):
+    """網頁版可以顯示「查不到座標」的搜尋結果——使用者看得到名稱能自己判斷。"""
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
+    n.app.config["TESTING"] = True
+    d = n.app.test_client().get("/convert",
+                                query_string={"url": "서울특별시 중구 저동2가 89"}).get_json()
+    assert d["verified"] is False and d["lat"] is None and "google_url" in d
+
+
+def test_verified_result_still_redirects(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_search_naver", lambda q: (37.5, 127.0, "테스트"))
+    n.app.config["TESTING"] = True
+    r = n.app.test_client().get("/a/서울특별시 중구 저동2가 89")
+    assert r.status_code == 302 and "ll=37.5,127.0" in r.headers["Location"]
+
+
+# -- 分享的是「路線」而不是地點 ----------------------------------------------
+def test_directions_link_uses_the_destination():
+    """/p/directions/<起點>/<終點>/… —— 要取終點，不是起點。"""
+    url = ("https://map.naver.com/p/directions/126.9779692,37.5662952,서울시청,,/"
+           "126.9849208,37.5704034,종로,,/-/transit")
+    assert n._coords_from_directions(url) == (37.5704034, 126.9849208, "종로")
+
+
+def test_directions_link_with_placeholder_start():
+    url = ("https://map.naver.com/p/directions/-/"
+           "126.9849208,37.5704034,%EC%A2%85%EB%A1%9C,11623284,PLACE_POI/-/transit")
+    lat, lng, name = n._coords_from_directions(url)
+    assert (lat, lng) == (37.5704034, 126.9849208) and name == "종로"
+
+
+def test_directions_pattern_ignores_non_route_urls():
+    assert n._coords_from_directions("https://map.naver.com/p/entry/place/123") is None

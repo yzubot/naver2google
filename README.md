@@ -115,11 +115,42 @@ Google 版把 `/m/` 換成 `/g/` 即可。
 
 依優先順序嘗試：
 
-1. **短連結展開** — `naver.me/*` → HTTP HEAD follow redirect
+1. **短連結展開** — `naver.me/*` → GET follow redirect
 2. **URL 參數** — 解析 `lat`/`lng` query params
-3. **Place API** — 從路徑取 `/place/{ID}` → 呼叫 Naver Place Summary API（免 API key）
+3. **Place ID → Place API**（免 API key）。id 來源三種：
+   `/place/{id}`、`m.place.naver.com/{類別}/{id}`（`restaurant`/`accommodation`/…）、
+   以及 Naver **App** 分享的 `nmap://place?id={id}`
 4. **@座標格式** — regex `@lat,lng`
-5. **Fallback** — 直接傳文字到 Google/Apple Maps 搜尋
+5. **Naver 視窗參數** — `?c=經度,緯度,…`、`?x=&y=`
+6. **文字反查 Naver**（`/entry/address/…`、`/p/search/…`、分享文字）→ 精確座標
+7. **最後才是** 把文字丟給 Google/Apple 自己搜（標記 `verified: false`）
+
+### 兩條非顯而易見的坑（都實測踩過）
+
+* **Naver 搜尋把付費廣告排第一** — 搜「명동교자」第一筆回「강남교자 센터원점」。
+  照抄第一筆會把人送到一間真的存在、但不是他要的店。`_score_place()` 依
+  「店名 vs 分享文字」重疊度排序，平手才用 Naver 原順序。
+* **「店名 + 完整地址」黏成一串，Naver 回 0 筆** — 而分享文字正是這個形狀。
+  `_search_candidates()` 做階梯式退化：整段 → 只用店名 → 只用地址。
+
+### verified 旗標
+
+`verified: false` = 沒人確認過這個位置（只是把文字丟去搜）。實測一個真實分享
+文字的盲搜尋在 Apple 地圖上落在 **300 公里外**。因此：
+
+* `/convert`、`/convert_batch`（網頁版）**會**回傳，UI 標明「位置可能不對」
+* `/a/`、`/g/`、`/m/`、`/apple`、`/google`、`/go`（捷徑會直接把人傳送過去）
+  **一律回 422 不轉址**
+
+## 測試
+
+```bash
+python -m pytest test_naver2google.py -q     # 69 條，全離線
+python scripts/route_check.py                # 每個 endpoint × 每種輸入格式（要先起服務）
+python scripts/ui_check.py                   # Playwright 實際點網頁（桌機 + 手機）
+python scripts/live_matrix.py                # 17 個真實地點 × 14 種連結形狀，比對座標誤差
+python scripts/harvest_places.py             # 重新抓 live_matrix 用的標準答案
+```
 
 ## 自架
 
