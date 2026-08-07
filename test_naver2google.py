@@ -168,6 +168,8 @@ def test_shortcut_guide_teaches_the_no_safari_flow():
     # 零設定那條：網址接輸入 + 取得字典值。POST/JSON 那格是折疊的，設錯看不出來
     assert "https://naver2google.onrender.com/aj/" in body
     assert "不用設 POST" in body
+    # Naver 分享是兩筆（文字＋place id），要先用「文字」動作壓成一段
+    assert "選擇一個項目" in body and "兩筆" in body
     assert "取得字典值" in body and "<code>url</code>" in body
     # 純文字回應會被捷徑當成 richtext，教學要說明為何走 JSON
     assert "RTF" in body
@@ -779,3 +781,30 @@ def test_unknown_place_id_does_not_become_a_number_search(monkeypatch):
     monkeypatch.setattr(n, "_search_naver", lambda q: None)
     r = n.convert("9999999999")
     assert r["verified"] is False
+
+
+
+def test_place_id_found_even_when_items_are_space_joined(monkeypatch):
+    """捷徑不一定用換行接兩筆輸入。中文店名 Naver 查不到（實測 0 筆），
+    唯一可靠的就是那組 place id——不管怎麼接都要撈得到。"""
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_coords_from_place_api",
+                        lambda pid: (37.5724089, 126.987433, "N285호텔 인사동")
+                        if pid == "1186111517" else None)
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
+    for blob in ("N285酒店仁寺洞 1186111517",
+                 "N285酒店仁寺洞\n1186111517",
+                 "N285酒店仁寺洞,1186111517"):
+        n.convert.cache_clear()
+        assert n.convert(blob)["lat"] == 37.5724089, blob
+
+
+def test_short_numbers_are_not_treated_as_place_ids(monkeypatch):
+    """門牌／郵遞區號不能被當成 place id 去查。"""
+    n.convert.cache_clear()
+    called = []
+    monkeypatch.setattr(n, "_coords_from_place_api",
+                        lambda pid: called.append(pid) or None)
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
+    n.convert("서울특별시 종로구 낙원동 285 04523")
+    assert "285" not in called      # 3 位數不算

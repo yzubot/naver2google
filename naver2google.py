@@ -574,13 +574,17 @@ def _convert(naver_url: str) -> dict:
     # Step 3.5a: a bare numeric line is a Naver **place id**, not a search term.
     # Naver 的分享表單除了文字還會附上 place id，捷徑把它當成一筆輸入送過來；
     # 拿數字去搜尋只會搜到不相干的店（實測：搜 1186111517 得到「온점 을지로점」）。
-    for line in unquote(raw).splitlines():
-        token = line.strip()
-        if re.fullmatch(r"\d{5,12}", token):
-            hit = _coords_from_place_api(token)
-            if hit:
-                lat, lng, name = hit
-                return _build_result(lat, lng, name)
+    text_in = unquote(raw)
+    ids = [ln.strip() for ln in text_in.splitlines()
+           if re.fullmatch(r"\d{5,12}", ln.strip())]
+    # 捷徑不一定用換行接（可能是空白），所以整段也掃一次。這裡要求 7 位以上，
+    # 免得把郵遞區號、門牌號當成 place id。
+    ids += [t for t in re.findall(r"(?<!\d)\d{7,12}(?!\d)", text_in) if t not in ids]
+    for token in ids[:3]:
+        hit = _coords_from_place_api(token)
+        if hit:
+            lat, lng, name = hit
+            return _build_result(lat, lng, name)
 
     # Step 3.55: a route link (/p/directions/<from>/<to>/…) — take the destination
     coords = _coords_from_directions(url)
@@ -829,11 +833,11 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
 <body>
 <div class="wrap">
   <h1>在 Naver Map 按分享，直接開 Apple 地圖</h1>
-  <div class="sub">3 個動作、建一次就永久能用，而且<b>直接開「地圖」App，不經過 Safari</b>。</div>
+  <div class="sub">4 個動作、建一次就永久能用，而且<b>直接開「地圖」App，不經過 Safari</b>。</div>
 
   <div class="card hero">
     <span class="tag tag-a">照著做 ・ 約 2 分鐘</span>
-    <h2>建立捷徑（3 個動作，不會經過 Safari）</h2>
+    <h2>建立捷徑（4 個動作，不會經過 Safari）</h2>
     <div class="note" style="margin-bottom:12px"><b>不用設 POST／JSON／欄位。</b>
     那些設定藏在折疊起來的「顯示更多」裡，設錯了外面看不出來——
     改成把分享內容直接接在網址後面，就沒有隱藏設定可以設錯。</div>
@@ -848,6 +852,14 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
     </div>
     <ol class="steps">
       <li>打開 iPhone 內建的「<b>捷徑</b>」App → 右上角 <b>+</b></li>
+      <li>先搜尋「<b>文字</b>」→ 加一個「<b>文字</b>」動作 →
+        點它的空白欄位 → 選鍵盤上方的「<b>捷徑輸入</b>」
+        <div class="warn" style="margin-top:8px">⚠️ <b>這一步不能省。</b>
+        Naver 分享出來的其實是<b>兩筆</b>東西（店名文字 + 一組 place id 數字），
+        少了這個動作，捷徑只會送其中一筆過來，還會跳出
+        「<b>選擇一個項目</b>」要你自己選。「文字」動作會把兩筆壓成一段，
+        伺服器就能從裡面挑出 place id、拿到<b>精確座標</b>。</div>
+      </li>
       <li>搜尋「<b>取得 URL 內容</b>」→ 點它加進來
         <div class="warn" style="margin-top:8px">⚠️ 別選成「<b>展開 URL</b>」或
         「<b>打開 URL</b>」——這一步要的是「<b>取得</b> URL 內容」。</div></li>
@@ -856,10 +868,11 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
         <button class="copy" onclick="cp('ep',this)">複製這段網址</button>
       </li>
       <li><b>最關鍵的一步：</b>貼完後游標會停在網址最後面，
-        <b>不要移動它</b>，直接點鍵盤<b>正上方那一排</b>裡的「<b>捷徑輸入</b>」。
+        <b>不要移動它</b>，直接點鍵盤<b>正上方那一排</b>裡的「<b>文字</b>」
+        （上一步那個動作的結果，<b>不是</b>「捷徑輸入」）。
         <div class="warn" style="margin-top:8px">
-        點下去會多出一個藍色小方塊，整格變成
-        <code>…/aj/</code><span style="color:#60a5fa">捷徑輸入</span>。
+        點下去會多出一個小方塊，整格變成
+        <code>…/aj/</code><span style="color:#60a5fa">文字</span>。
         <b>方式、要求內文那些通通不用動</b>（維持 GET）。
         <br><span class="dim">如果那排沒看到「捷徑輸入」，往左右滑一下，
         或先點一下網址欄位讓鍵盤出來。
@@ -922,6 +935,7 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <tr><td>捷徑沒出現在分享表單</td><td>回捷徑的 ⓘ 確認「在分享表單中顯示」有開、而且勾了 URL</td></tr>
       <tr><td>第一次比較慢</td><td>雲端主機在醒過來，通常 1~2 秒；已設每 8 分鐘保溫</td></tr>
       <tr><td>「無法從『RTF』轉換到『URL』」</td><td>第一格網址要用 <code>/aj/</code>，中間要用「<b>取得字典值</b>」（鍵 <code>url</code>）。純文字回應會被捷徑當成 richtext</td></tr>
+      <tr><td>跳出「選擇一個項目」</td><td>第一格少了「<b>文字</b>」動作。Naver 一次送兩筆（文字＋place id），要先壓成一段</td></tr>
       <tr><td>開到「捷徑沒有成功轉換」那頁</td><td>那頁的黃色橫幅會直接寫是什麼問題，而且已經幫你轉好一份給你按</td></tr>
       <tr><td>還是先開 Safari</td><td>表示捷徑還是舊的「打開 URL <code>…/a/</code>」一個動作版；照上面改成 2 個動作</td></tr>
       <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/aj/</code>（自架版，只有家裡網路通）</td></tr>
