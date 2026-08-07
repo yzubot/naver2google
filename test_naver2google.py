@@ -658,3 +658,32 @@ def test_directions_link_with_placeholder_start():
 
 def test_directions_pattern_ignores_non_route_urls():
     assert n._coords_from_directions("https://map.naver.com/p/entry/place/123") is None
+
+
+
+# -- .json 版端點（捷徑唯一穩的路） ------------------------------------------
+def test_json_endpoints_return_a_dict(monkeypatch):
+    """純文字回應會被 iOS 捷徑當成 richtext → 「打開 URL」失敗。
+    捷徑對 JSON 是原生支援，所以 .json 版是給捷徑用的正路。"""
+    c = _client(monkeypatch)
+    for path, host in (("/apple.json", "maps.apple.com"), ("/google.json", "google.com/maps")):
+        r = c.get(path, query_string={"url": "https://naver.me/short"})
+        assert r.status_code == 200, path
+        assert r.mimetype == "application/json", path
+        assert host in r.get_json()["url"], path
+
+
+def test_plain_endpoint_sends_no_charset(monkeypatch):
+    """charset 參數是捷徑判成 richtext 的線索之一；body 是純 ASCII，不需要它。"""
+    c = _client(monkeypatch)
+    r = c.get("/apple", query_string={"url": "https://naver.me/short"})
+    assert r.headers["Content-Type"] == "text/plain"
+    r.get_data(as_text=True).encode("ascii")      # 真的是 ASCII，省掉 charset 才安全
+
+
+def test_json_endpoints_also_refuse_unverified(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
+    n.app.config["TESTING"] = True
+    r = n.app.test_client().get("/apple.json", query_string={"url": "서울특별시 중구 저동2가 89"})
+    assert r.status_code == 422

@@ -811,8 +811,8 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <li>搜尋「<b>取得 URL 內容</b>」→ 點它加進來
         <div class="warn" style="margin-top:8px">⚠️ 別選成「<b>展開 URL</b>」或
         「<b>打開 URL</b>」——這一步要的是「<b>取得</b> URL 內容」。</div></li>
-      <li>在那格的網址欄貼上這段（結尾就是 <code>/apple</code>，後面<b>不要</b>接東西）：
-        <pre id="ep">https://naver2google.onrender.com/apple</pre>
+      <li>在那格的網址欄貼上這段（結尾就是 <code>/apple.json</code>，後面<b>不要</b>接東西）：
+        <pre id="ep">https://naver2google.onrender.com/apple.json</pre>
         <button class="copy" onclick="cp('ep',this)">複製這段網址</button>
       </li>
       <li>點那一格的「<b>顯示更多</b>」展開 →
@@ -830,21 +830,20 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
         <code>maps.apple.com/…</code>。選「表單」再加同樣的
         <code>url</code> 欄位也可以，兩種都收。</span></div>
       </li>
-      <li>搜尋「取得文字」→ 選清單裡的「<b>從輸入項目取得文字</b>」加進來
-        <div class="warn" style="margin-top:8px">⚠️ <b>這一步不能省。</b>
-        少了它會出現
-        「<b>打開 URL 失敗，因為捷徑無法從「RTF」轉換到「URL」</b>」——
-        捷徑把伺服器回的純文字認成「richtext」，而「打開 URL」只吃 URL／文字。
-        「取得文字」就是把它轉回單純文字。
-        <br><span class="dim">搜「取得文字」會跑出一串很像的
-        （從 PDF 取得文字／取代文字…），要選的是
-        「<b>從輸入項目取得文字</b>」（Get Text from Input）。
-        用「<b>URL</b>」那個動作也可以，一樣放上一步的結果。</span></div>
+      <li>搜尋「<b>取得字典值</b>」加進來 →
+        <b>取得</b> 選「<b>值</b>」→ <b>鍵</b>打 <code>url</code>
+        <div class="warn" style="margin-top:8px">⚠️ <b>這一步不能省，而且不能用
+        「從輸入項目取得文字」代替。</b>
+        伺服器如果回純文字，捷徑會把它認成「<b>richtext</b>」，「打開 URL」就噴
+        「<b>無法從「RTF」轉換到「URL」</b>」——實測連插一個
+        「從輸入項目取得文字」都救不回來。
+        <br><span class="dim">改回 JSON 就沒這問題：捷徑對 JSON 是原生支援，
+        會自動變成字典，「取得字典值」拿出來的就是乾淨的文字。</span></div>
       </li>
       <li>再搜尋「<b>打開 URL</b>」加進來（最後一個動作）。
         欄位預設就會是上一步的結果——<b>維持原樣就對了</b>。
         <div class="dim" style="margin-top:8px">如果那格是空的，點一下它，
-        選「<b>從輸入項目取得文字</b>」那個變數。</div>
+        選「<b>字典值</b>」那個變數。</div>
       </li>
       <li>點最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
       <li>點名稱旁的 <b>ⓘ</b> → 打開「<b>在分享表單中顯示</b>」→
@@ -856,7 +855,7 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
     <div class="note"><b>好了。</b>到 Naver Map 開任一地點 → <b>分享</b> →
     找到「用 Apple 地圖開啟」→ <b>直接跳進「地圖」App</b>，不經過 Safari。<br>
     想要 Google 版就再建一個一模一樣的，只把網址結尾的
-    <code>/apple</code> 改成 <code>/google</code>。</div>
+    <code>/apple.json</code> 改成 <code>/google.json</code>。</div>
     <div class="warn"><b>轉不出來的時候會怎樣？</b>
     伺服器查不到精確座標時會回一段錯誤文字（HTTP 422）而<b>不是</b>給你一個
     亂猜的位置——因為實測「拿文字去搜」可能把你送到 1000 公里外。
@@ -887,13 +886,14 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <tr><th>狀況</th><th>怎麼辦</th></tr>
       <tr><td>捷徑沒出現在分享表單</td><td>回捷徑的 ⓘ 確認「在分享表單中顯示」有開、而且勾了 URL</td></tr>
       <tr><td>第一次比較慢</td><td>雲端主機在醒過來，通常 1~2 秒；已設每 8 分鐘保溫</td></tr>
-      <tr><td>「無法從『RTF』轉換到『URL』」</td><td>中間少了「<b>從輸入項目取得文字</b>」那個動作，補上就好</td></tr>
+      <tr><td>「無法從『RTF』轉換到『URL』」</td><td>網址結尾要是 <code>/apple.json</code>，中間要用「<b>取得字典值</b>」（鍵 <code>url</code>）。純文字版會被捷徑當成 richtext</td></tr>
       <tr><td>還是先開 Safari</td><td>表示捷徑還是舊的「打開 URL <code>…/a/</code>」一個動作版；照上面改成 2 個動作</td></tr>
-      <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/apple</code>（自架版，只有家裡網路通）</td></tr>
+      <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/apple.json</code>（自架版，只有家裡網路通）</td></tr>
       <tr><td>回了一段錯誤文字</td><td>那條連結查不到精確座標；刻意不亂猜位置。過幾秒再試或到<a href="/">網頁版</a>看</td></tr>
     </table>
-    <div class="dim" style="margin-top:12px">技術上：<code>/apple</code>、<code>/google</code>
-    回<b>一行純文字網址</b>（GET <code>?url=</code> 或 POST 純文字內文都收），
+    <div class="dim" style="margin-top:12px">技術上：<code>/apple.json</code>、<code>/google.json</code>
+    回 <code>{"url": "…"}</code>；<code>/apple</code>、<code>/google</code>
+    回一行純文字網址（GET <code>?url=</code>、POST JSON／表單／純文字內文都收），
     交給捷徑的「打開 URL」就是 universal link，直接進地圖 App。
     <code>/a/</code>、<code>/g/</code>、<code>/m/</code> 則是把 Naver 網址接在路徑後面直接 302，
     一個動作就好但會先經過 Safari。查不到精確座標時兩者都回 422，不會轉到亂猜的位置。</div>
@@ -987,12 +987,26 @@ def _extract_url_arg() -> str:
 
 @app.route("/apple", methods=["GET", "POST"])
 @app.route("/google", methods=["GET", "POST"])
+@app.route("/apple.json", methods=["GET", "POST"])
+@app.route("/google.json", methods=["GET", "POST"])
 def api_plain():
-    """回傳「純文字的一行網址」，給 iOS 捷徑直接餵進「打開 URL」用。
+    """一行網址，給 iOS 捷徑餵進「打開 URL」。
 
-    刻意不回 JSON：捷徑要多一個「取得字典值」動作才拿得到，純文字最少步驟。
+    兩種口味，因為捷徑對「文字」很難搞：
+      * `/apple`      → `text/plain` 的裸網址（最少動作，但見下）
+      * `/apple.json` → `{"url": "…"}`，配「取得字典值」用
+
+    為什麼要有 .json：使用者實測 `text/plain` 回應會被捷徑歸類成 **richtext**，
+    「打開 URL」就噴「無法從『RTF』轉換到『URL』」——連中間插一個
+    「從輸入項目取得文字」都救不回來。捷徑對 JSON 是原生支援（自動變成字典），
+    所以 .json + 取得字典值是唯一穩的路。
+
+    純文字版的 Content-Type 也刻意**不帶 charset**（body 是 percent-encoded
+    的純 ASCII），因為那個參數正是捷徑判成 richtext 的線索之一。
     """
-    target = "apple" if request.path.rstrip("/").endswith("apple") else "google"
+    path = request.path.rstrip("/")
+    as_json = path.endswith(".json")
+    target = "apple" if path.split(".")[0].endswith("apple") else "google"
     url = _extract_url_arg()
     if not url:
         return Response("缺少 url 參數", status=400,
@@ -1008,8 +1022,13 @@ def api_plain():
     except Exception as e:  # noqa: BLE001
         return Response(f"解析失敗：{e}", status=502,
                         content_type="text/plain; charset=utf-8")
-    return _unverified(result) or Response(
-        result[f"{target}_url"], content_type="text/plain; charset=utf-8")
+    bail = _unverified(result)
+    if bail:
+        return bail
+    dest = result[f"{target}_url"]
+    if as_json:
+        return jsonify({"url": dest})
+    return Response(dest, content_type="text/plain")
 
 
 UNVERIFIED_MSG = (
