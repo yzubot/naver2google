@@ -639,6 +639,12 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
 <body>
 <div class="wrap">
   <h1>Naver Map → Google / Apple Maps</h1>
+  <div class="card" id="why-card" style="display:none;border-color:#78350f;background:#1f1608">
+    <div style="font-weight:700;margin-bottom:6px">⚠️ 捷徑沒有成功轉換</div>
+    <div id="why-msg" style="font-size:.9rem;line-height:1.6"></div>
+    <div class="hint" style="margin-top:10px">下面已經幫你把原始內容貼好並轉了一次。
+    如果結果看起來是對的，直接按按鈕開地圖就好。</div>
+  </div>
   <div class="card">
     <label for="url-input">貼上 Naver Map 連結、或直接輸入地址</label>
     <textarea id="url-input"
@@ -720,6 +726,20 @@ async function doConvert(){
     ea.textContent='轉換失敗：'+e.message;ea.style.display='block';
   }
 }
+// 捷徑轉不出來時會把人送來這裡（?why=原因&q=原始輸入）——直接說明並自動轉一次，
+// 不要讓使用者只看到捷徑那行紅字然後卡住。
+(function(){
+  const p=new URLSearchParams(location.search);
+  const why=p.get('why'), q=p.get('q');
+  if(why){
+    document.getElementById('why-msg').textContent=why;
+    document.getElementById('why-card').style.display='block';
+  }
+  if(q){
+    document.getElementById('url-input').value=q;
+    doConvert();
+  }
+})();
 document.getElementById('url-input').addEventListener('keydown',function(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doConvert();}
 });
@@ -975,6 +995,10 @@ def _extract_url_arg() -> str:
     payload = request.get_json(silent=True)
     if isinstance(payload, dict):
         url = str(payload.get("url") or "").strip()
+        # The body *is* JSON — if it carries no `url`, the caller配錯了。Falling
+        # through to `raw` would hand convert() the literal string "{}" and we'd
+        #報一個看不懂的錯，而不是「捷徑沒把輸入傳過來」。
+        return url
     if not url:
         url = (request.form.get("url") or "").strip()
     if not url and request.form and len(request.form) == 1:
@@ -985,56 +1009,10 @@ def _extract_url_arg() -> str:
     return url or raw
 
 
-@app.route("/apple", methods=["GET", "POST"])
-@app.route("/google", methods=["GET", "POST"])
-@app.route("/apple.json", methods=["GET", "POST"])
-@app.route("/google.json", methods=["GET", "POST"])
-def api_plain():
-    """一行網址，給 iOS 捷徑餵進「打開 URL」。
-
-    兩種口味，因為捷徑對「文字」很難搞：
-      * `/apple`      → `text/plain` 的裸網址（最少動作，但見下）
-      * `/apple.json` → `{"url": "…"}`，配「取得字典值」用
-
-    為什麼要有 .json：使用者實測 `text/plain` 回應會被捷徑歸類成 **richtext**，
-    「打開 URL」就噴「無法從『RTF』轉換到『URL』」——連中間插一個
-    「從輸入項目取得文字」都救不回來。捷徑對 JSON 是原生支援（自動變成字典），
-    所以 .json + 取得字典值是唯一穩的路。
-
-    純文字版的 Content-Type 也刻意**不帶 charset**（body 是 percent-encoded
-    的純 ASCII），因為那個參數正是捷徑判成 richtext 的線索之一。
-    """
-    path = request.path.rstrip("/")
-    as_json = path.endswith(".json")
-    target = "apple" if path.split(".")[0].endswith("apple") else "google"
-    url = _extract_url_arg()
-    if not url:
-        return Response("缺少 url 參數", status=400,
-                        content_type="text/plain; charset=utf-8")
-    try:
-        result = convert(url)
-    except ConversionFailed as e:
-        return Response(str(e), status=422,
-                        content_type="text/plain; charset=utf-8")
-    except NaverUnavailable as e:
-        return Response(f"Naver 暫時無法連線：{e}", status=503,
-                        content_type="text/plain; charset=utf-8")
-    except Exception as e:  # noqa: BLE001
-        return Response(f"解析失敗：{e}", status=502,
-                        content_type="text/plain; charset=utf-8")
-    bail = _unverified(result)
-    if bail:
-        return bail
-    dest = result[f"{target}_url"]
-    if as_json:
-        return jsonify({"url": dest})
-    return Response(dest, content_type="text/plain")
-
-
 UNVERIFIED_MSG = (
-    "查不到這個地點的座標（Naver 可能暫時沒回應）。\n"
+    "查不到這個地點的座標（Naver 可能暫時沒回應）。"
     "為了不要把你導到錯的地方，這裡就不轉址了 —— 請過幾秒再試一次，"
-    "或改用網頁版看看搜尋結果對不對。"
+    "或看下面的搜尋結果對不對。"
 )
 
 
@@ -1049,6 +1027,74 @@ def _unverified(result: dict):
         return None
     return Response(UNVERIFIED_MSG, status=422,
                     content_type="text/plain; charset=utf-8")
+
+
+def _fallback_url(reason: str, original: str = "") -> str:
+    """出事時要去哪裡。
+
+    捷徑的「取得字典值」碰到非 JSON 回應會直接爆
+    （「無法從『文字』轉換到『辭典』」），使用者只看得到一行紅字、查不出原因。
+    所以 .json 端點**永遠回 200 + {"url": …}**：真的轉得出來就給地圖網址，
+    轉不出來就給我們自己的網頁，上面寫清楚發生什麼事、還附上原始輸入。
+    """
+    base = request.host_url.rstrip("/")
+    out = f"{base}/?why={quote(reason)}"
+    if original:
+        out += f"&q={quote(original)}"
+    return out
+
+
+NO_INPUT_MSG = (
+    "捷徑沒有把分享的內容傳過來。請回捷徑第一格點「顯示更多」，確認："
+    "方式 = POST、要求內文 = JSON、裡面有一個欄位 鍵 url、"
+    "值是藍色的「捷徑輸入」方塊（不是自己打的字）。"
+)
+
+
+@app.route("/apple", methods=["GET", "POST"])
+@app.route("/google", methods=["GET", "POST"])
+@app.route("/apple.json", methods=["GET", "POST"])
+@app.route("/google.json", methods=["GET", "POST"])
+def api_plain():
+    """一行網址，給 iOS 捷徑餵進「打開 URL」。
+
+    兩種口味，因為捷徑對「文字」很難搞：
+      * `/apple`      → `text/plain` 的裸網址
+      * `/apple.json` → `{"url": "…"}`，配「取得字典值」用
+
+    為什麼要有 .json：使用者實測 `text/plain` 回應會被捷徑歸類成 **richtext**，
+    「打開 URL」就噴「無法從『RTF』轉換到『URL』」——連中間插一個
+    「從輸入項目取得文字」都救不回來。捷徑對 JSON 是原生支援（自動變成字典）。
+
+    .json 版**任何情況都回 200 + url 鍵**，理由見 _fallback_url()。
+    """
+    path = request.path.rstrip("/")
+    as_json = path.endswith(".json")
+    target = "apple" if path.split(".")[0].endswith("apple") else "google"
+
+    def fail(msg: str, status: int, original: str = ""):
+        if as_json:
+            return jsonify({"url": _fallback_url(msg, original), "error": msg})
+        return Response(msg, status=status,
+                        content_type="text/plain; charset=utf-8")
+
+    url = _extract_url_arg()
+    if not url:
+        return fail(NO_INPUT_MSG, 400)
+    try:
+        result = convert(url)
+    except ConversionFailed as e:
+        return fail(str(e), 422, url)
+    except NaverUnavailable as e:
+        return fail(f"Naver 暫時無法連線：{e}", 503, url)
+    except Exception as e:  # noqa: BLE001
+        return fail(f"解析失敗：{e}", 502, url)
+    if not result.get("verified"):
+        return fail(UNVERIFIED_MSG, 422, url)
+    dest = result[f"{target}_url"]
+    if as_json:
+        return jsonify({"url": dest})
+    return Response(dest, content_type="text/plain")
 
 
 class _AnyTextConverter(PathConverter):

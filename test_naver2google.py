@@ -681,9 +681,33 @@ def test_plain_endpoint_sends_no_charset(monkeypatch):
     r.get_data(as_text=True).encode("ascii")      # 真的是 ASCII，省掉 charset 才安全
 
 
-def test_json_endpoints_also_refuse_unverified(monkeypatch):
+def test_json_endpoint_never_hands_shortcuts_a_non_dict(monkeypatch):
+    """捷徑的「取得字典值」碰到非 JSON 回應會爆「無法從『文字』轉換到『辭典』」，
+    使用者只看得到紅字。所以 .json 版任何情況都要回 200 + url 鍵——
+    只是轉不出來時那個 url 指向我們自己的說明頁，不是地圖。"""
     n.convert.cache_clear()
     monkeypatch.setattr(n, "_search_naver", lambda q: None)
     n.app.config["TESTING"] = True
-    r = n.app.test_client().get("/apple.json", query_string={"url": "서울특별시 중구 저동2가 89"})
-    assert r.status_code == 422
+    r = n.app.test_client().get("/apple.json",
+                                query_string={"url": "서울특별시 중구 저동2가 89"})
+    assert r.status_code == 200 and r.mimetype == "application/json"
+    d = r.get_json()
+    assert "maps.apple.com" not in d["url"]      # 不能把人送到沒驗證的位置
+    assert "why=" in d["url"] and "q=" in d["url"]   # 帶著原因和原始輸入
+    assert d["error"]
+
+
+def test_json_endpoint_explains_a_missing_shortcut_input():
+    """捷徑第一格沒設好 POST/JSON/url 欄位時，伺服器收到的是空的。
+    這時也要回 JSON，並指向寫著「怎麼修」的頁面。"""
+    n.app.config["TESTING"] = True
+    r = n.app.test_client().post("/apple.json", json={})
+    assert r.status_code == 200 and r.mimetype == "application/json"
+    assert "why=" in r.get_json()["url"]
+    assert "捷徑輸入" in r.get_json()["error"]
+
+
+def test_plain_endpoint_still_errors_with_a_status(monkeypatch):
+    """非 .json 版維持原本語意（給 curl / 網頁用），不要被上面那條帶壞。"""
+    n.app.config["TESTING"] = True
+    assert n.app.test_client().get("/apple").status_code == 400
