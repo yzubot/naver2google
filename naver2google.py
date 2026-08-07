@@ -45,6 +45,16 @@ class NaverUnavailable(RuntimeError):
     simply can't parse) — lets the API return a distinct 503 instead of 502."""
 
 
+class ConversionFailed(RuntimeError):
+    """Raised when we reached Naver fine but could not pin down a location.
+
+    Why this exists: the old behaviour was to fall back to "search for whatever
+    text we have". When that text is the *URL itself* the map app searches a
+    meaningless string and quietly drops the user somewhere near **their own**
+    location (Taiwan) — a wrong answer that looks like a right one. Failing
+    loudly is the only honest option."""
+
+
 # Shared session: connection pooling + automatic retry with backoff on the
 # transient statuses Naver's internal API throws under load.
 def _make_session() -> http_client.Session:
@@ -100,9 +110,20 @@ def _coords_from_params(url: str) -> tuple[float, float] | None:
     return None
 
 
+# m.place.naver.com uses the *category* as the path segment instead of "place":
+# /restaurant/1234/home, /accommodation/1234/home, /hairshop/…, /attraction/…
+# The numeric id is the same global place id the summary API takes, so match any
+# segment — anchored to the place host so we don't grab digits out of some other
+# path (e.g. /entry/address/…).
+_PLACE_HOST_ID = re.compile(r"(?:m\.)?place\.naver\.com/[a-z]+/(\d+)")
+
+
 def _extract_place_id(url: str) -> str | None:
-    """Extract numeric place ID from /place/12345 in the URL path."""
+    """Extract the numeric place ID from a Naver Map / Naver Place URL."""
     m = re.search(r"/place/(\d+)", url)
+    if m:
+        return m.group(1)
+    m = _PLACE_HOST_ID.search(url)
     return m.group(1) if m else None
 
 
@@ -124,14 +145,47 @@ def _coords_from_place_api(place_id: str) -> tuple[float, float, str] | None:
         data = resp.json()
     except ValueError:
         return None
-    detail = data.get("data", {}).get("placeDetail", {})
-    coord = detail.get("coordinate", {})
+    # Unknown/deleted ids still answer 200 but with every field null, so every
+    # hop needs `or {}` — plain .get(k, {}) returns the None that's actually there.
+    detail = ((data or {}).get("data") or {}).get("placeDetail") or {}
+    coord = detail.get("coordinate") or {}
     lat = coord.get("latitude")
     lng = coord.get("longitude")
     if lat is None or lng is None:
         return None
-    name = detail.get("name", "")
+    name = detail.get("name") or ""
     return float(lat), float(lng), name
+
+
+def _coords_from_map_params(url: str) -> tuple[float, float] | None:
+    """Coordinates from Naver's own map-viewport params.
+
+    Two shapes in the wild:
+      * `?c=126.9784,37.5665,15,0,0,0,dh`  → lng,lat,zoom,…  (7 parts)
+      * `?x=126.9784&y=37.5665`            → older v5 links
+    The current short-link format is `?c=15.00,0,0,0,dh` — zoom only, no
+    coordinates — hence the 6-part minimum before trusting `c`.
+    """
+    try:
+        params = parse_qs(urlparse(url).query)
+    except ValueError:
+        return None
+
+    parts = (params.get("c") or [""])[0].split(",")
+    if len(parts) >= 6:
+        try:
+            lng, lat = float(parts[0]), float(parts[1])
+        except ValueError:
+            pass
+        else:
+            # Reject the zoom-only form (leading zeros) and out-of-range junk.
+            if abs(lng) > 1 and abs(lat) > 1 and abs(lng) <= 180 and abs(lat) <= 90:
+                return lat, lng
+
+    try:
+        return float(params["y"][0]), float(params["x"][0])
+    except (KeyError, ValueError, IndexError):
+        return None
 
 
 def _coords_from_at_pattern(url: str) -> tuple[float, float] | None:
@@ -151,7 +205,9 @@ def _extract_url(text: str) -> str:
         Address line
         https://naver.me/XXXXX
     """
-    m = re.search(r"(https?://(?:naver\.me|map\.naver\.com|m\.map\.naver\.com)\S+)", text)
+    # Any naver host — share sheets also hand out m.place.naver.com/<類別>/<id>
+    # and pcmap.place.naver.com, not just map.naver.com / naver.me.
+    m = re.search(r"(https?://(?:naver\.me|[\w.-]*\.?naver\.com)/\S+)", text)
     if m:
         return m.group(1)
     # Also match nmap:// scheme
@@ -189,6 +245,26 @@ def _clean_search_text(text: str) -> str:
     return " ".join(lines) if lines else text.strip()
 
 
+_URL_TOKEN = re.compile(r"\S*(?:https?://|nmap://|naver\.me/|naver\.com/)\S*")
+
+
+def _strip_urls(text: str) -> str:
+    """Drop every URL-ish token — what's left is the店名／地址 worth searching."""
+    return " ".join(_URL_TOKEN.sub(" ", text).split()).strip()
+
+
+def _name_from_share_text(text: str) -> str:
+    """First human line of a Naver share blob — used as the map pin's label."""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or re.fullmatch(r"[\[【(（].{0,20}[\]】)）]", line):
+            continue  # 「[NAVER 地图]」這種標頭列
+        line = _strip_urls(line)
+        if line:
+            return line
+    return ""
+
+
 def _build_result(lat: float, lng: float, name: str) -> dict:
     """Build result dict with both Google and Apple Maps URLs.
 
@@ -206,6 +282,23 @@ def _build_result(lat: float, lng: float, name: str) -> dict:
     return {
         "lat": lat, "lng": lng, "name": name,
         "google_url": google_url, "apple_url": apple_url,
+    }
+
+
+def _search_result(query: str) -> dict:
+    """No coordinates — hand the map app a *text search*, biased to Korea.
+
+    Naver Map only covers Korea, so every fallback query is a Korean place. The
+    bias matters because Apple/Google otherwise rank results near the phone
+    (Taiwan) and happily return an unrelated local address.
+    """
+    q = quote(query)
+    return {
+        "lat": None, "lng": None, "name": query,
+        # `ll` + `z` bias Google's search viewport to the Korean peninsula.
+        "google_url": f"https://www.google.com/maps/search/{q}/@36.5,127.9,7z",
+        # `sll`/`sspn` = "search around here, this wide" (Apple's search-region params).
+        "apple_url": f"https://maps.apple.com/?q={q}&sll=36.5,127.9&sspn=6.0,6.0",
     }
 
 
@@ -254,23 +347,27 @@ def convert(naver_url: str) -> dict:
         lat, lng = coords
         return _build_result(lat, lng, "")
 
+    # Step 3.4: Naver's own viewport params (?c=lng,lat,… / ?x=&y=)
+    coords = _coords_from_map_params(url)
+    if coords:
+        lat, lng = coords
+        return _build_result(lat, lng, _name_from_share_text(raw))
+
     # Step 3.5: address entry URL (/entry/address/CODE,CODE,address)
     addr_match = re.search(r"/entry/address/[^,]+,[^,]+,(.+?)(?:\?|$)", url)
     if addr_match:
-        query = unquote(addr_match.group(1)).strip()
-        return {
-            "lat": None, "lng": None, "name": query,
-            "google_url": f"https://www.google.com/maps/search/{quote(query)}",
-            "apple_url": f"https://maps.apple.com/?q={quote(query)}",
-        }
+        return _search_result(unquote(addr_match.group(1)).strip())
 
-    # Step 4: fallback — pass as search query
-    query = _clean_search_text(unquote(url))
-    return {
-        "lat": None, "lng": None, "name": query,
-        "google_url": f"https://www.google.com/maps/search/{quote(query)}",
-        "apple_url": f"https://maps.apple.com/?q={quote(query)}",
-    }
+    # Step 4: fallback — search the *human* part of the share text (店名+地址).
+    # Never the URL itself: searching "https://naver.me/xxxx" makes the map app
+    # match some unrelated place near the user (Taiwan) instead of Korea.
+    query = _clean_search_text(unquote(raw))
+    query = _strip_urls(query)
+    if not query:
+        raise ConversionFailed(
+            "這條連結抓不到座標，也沒有店名／地址可以搜尋。"
+            "請改用 Naver 地圖的「分享」整段文字，或換一條 place 連結。")
+    return _search_result(query)
 
 
 # ---------------------------------------------------------------------------
@@ -581,6 +678,8 @@ def api_convert():
         return jsonify({"error": "缺少 url 參數"}), 400
     try:
         return jsonify(convert(url))
+    except ConversionFailed as e:
+        return jsonify({"error": str(e)}), 422
     except NaverUnavailable as e:
         return jsonify({"error": f"Naver 暫時無法連線：{e}"}), 503
     except Exception as e:  # noqa: BLE001
@@ -602,6 +701,8 @@ def api_convert_batch():
     for u in urls[:50]:  # cap to protect the free host
         try:
             out.append({"input": u, **convert(u)})
+        except ConversionFailed as e:
+            out.append({"input": u, "error": str(e)})
         except NaverUnavailable as e:
             out.append({"input": u, "error": f"Naver 暫時無法連線：{e}"})
         except Exception as e:  # noqa: BLE001
@@ -645,6 +746,9 @@ def api_plain():
                         content_type="text/plain; charset=utf-8")
     try:
         result = convert(url)
+    except ConversionFailed as e:
+        return Response(str(e), status=422,
+                        content_type="text/plain; charset=utf-8")
     except NaverUnavailable as e:
         return Response(f"Naver 暫時無法連線：{e}", status=503,
                         content_type="text/plain; charset=utf-8")
@@ -702,6 +806,9 @@ def api_path_redirect(rest: str):
             url = "https://" + url
     try:
         result = convert(url)
+    except ConversionFailed as e:
+        return Response(str(e), status=422,
+                        content_type="text/plain; charset=utf-8")
     except NaverUnavailable as e:
         return Response(f"Naver 暫時無法連線：{e}", status=503,
                         content_type="text/plain; charset=utf-8")

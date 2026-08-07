@@ -322,3 +322,78 @@ def test_a_route_still_plain_redirect(monkeypatch):
     r = c.get("/a/https://naver.me/short")
     assert r.status_code == 302
     assert r.headers["Location"].startswith("https://maps.apple.com/")
+
+
+# -- regression: 抓不到座標時「亂跳到台灣某地址」 -------------------------------
+# 舊行為：抓不到座標就把「整條網址」當搜尋字串丟給地圖 App，地圖搜不到就在使用者
+# 附近（台灣）隨便給一個結果 —— 錯得像對的。現在改成寧可報錯。
+def test_place_id_from_m_place_category_path():
+    """m.place.naver.com 用「類別」當路徑段，不是 /place/ —— 以前完全抓不到。"""
+    for path in ("restaurant", "accommodation", "hairshop", "attraction", "cafe"):
+        url = f"https://m.place.naver.com/{path}/1093936086/home"
+        assert n._extract_place_id(url) == "1093936086", url
+    assert n._extract_place_id("https://pcmap.place.naver.com/restaurant/777/home") == "777"
+
+
+def test_extract_url_picks_up_place_host():
+    txt = "[NAVER 지도]\nN285호텔\nhttps://m.place.naver.com/accommodation/555/home"
+    assert n._extract_url(txt) == "https://m.place.naver.com/accommodation/555/home"
+
+
+def test_place_api_survives_all_null_payload(monkeypatch):
+    """不存在的 id 仍回 200，但每個欄位都是 null → 以前 NoneType 直接炸。"""
+    class _Resp:
+        status_code = 200
+        @staticmethod
+        def json():
+            return {"data": {"placeDetail": {"name": None, "coordinate": None}}}
+    monkeypatch.setattr(n.SESSION, "get", lambda *a, **k: _Resp())
+    assert n._coords_from_place_api("1093936086") is None
+
+
+def test_coords_from_map_params_c_param():
+    assert n._coords_from_map_params(
+        "https://map.naver.com/p/?c=126.9784,37.5665,15,0,0,0,dh") == (37.5665, 126.9784)
+
+
+def test_coords_from_map_params_ignores_zoom_only_c():
+    # 現行短連結格式 `c=15.00,0,0,0,dh` 沒有座標，別把 15/0 當成經緯度
+    assert n._coords_from_map_params(
+        "https://map.naver.com/p/entry/place/1?c=15.00,0,0,0,dh") is None
+
+
+def test_coords_from_map_params_xy():
+    assert n._coords_from_map_params("https://map.naver.com/v5/?x=126.9784&y=37.5665") \
+        == (37.5665, 126.9784)
+
+
+def test_convert_refuses_to_search_a_bare_url(monkeypatch):
+    """短連結解不開時，不可以拿網址本身去搜尋 —— 要報錯。"""
+    import pytest
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_resolve_short_link", lambda u: u)  # 404 短連結：原樣回來
+    with pytest.raises(n.ConversionFailed):
+        n.convert("https://naver.me/deadlink")
+
+
+def test_convert_share_text_falls_back_to_name_not_url(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_resolve_short_link", lambda u: u)
+    r = n.convert("[NAVER 지도]\nN285호텔 인사동\n서울특별시 종로구 낙원동 285\nhttps://naver.me/dead")
+    assert "naver" not in r["name"] and "http" not in r["name"]
+    assert "N285" in r["name"] and "종로구" in r["name"]
+
+
+def test_search_fallback_is_biased_to_korea():
+    r = n._search_result("종로구 낙원동 285")
+    assert "sll=36.5,127.9" in r["apple_url"]      # Apple 否則會在使用者附近搜
+    assert "@36.5,127.9" in r["google_url"]
+
+
+def test_path_redirect_reports_failure_instead_of_jumping(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_resolve_short_link", lambda u: u)
+    n.app.config["TESTING"] = True
+    r = n.app.test_client().get("/a/https://naver.me/deadlink")
+    assert r.status_code == 422           # 不是 302 —— 絕不能把人送到錯的地方
+    assert "Location" not in r.headers
