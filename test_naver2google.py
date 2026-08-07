@@ -167,6 +167,8 @@ def test_shortcut_guide_teaches_the_no_safari_flow():
     assert "maps://" in body and "廢除" in body   # 說明舊做法為何不能用
     # 教學裡的端點不能又變回會轉址的那種
     assert "https://naver2google.onrender.com/apple" in body
+    # 捷徑的「要求內文」只有 JSON/表單/檔案，沒有「文字」——教學不能寫錯
+    assert "沒有「文字」" in body and "<code>url</code>" in body
 
 
 # -- /a/ /g/ 一個動作用的路徑轉址 -------------------------------------------

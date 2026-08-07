@@ -816,11 +816,19 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
         <button class="copy" onclick="cp('ep',this)">複製這段網址</button>
       </li>
       <li>點那一格的「<b>顯示更多</b>」展開 →
-        <b>方法</b>改成 <b>POST</b> →
-        <b>請求內文</b>改成 <b>檔案</b>或<b>文字</b>（有「文字」就選文字）→
-        內容那欄點一下，選鍵盤上方的「<b>捷徑輸入</b>」
-        <div class="dim" style="margin-top:8px">意思是：把 Naver 分享出來的
-        那整段文字原封不動送給伺服器，伺服器回你一行 <code>maps.apple.com/…</code>。</div>
+        <b>方法</b>改成 <b>POST</b>
+        <div class="dim" style="margin-top:8px">「要求內文」保持
+        <b>JSON</b>（預設就是）——選單裡只有 JSON／表單／檔案，<b>沒有「文字」</b>。</div>
+      </li>
+      <li>點「<b>加入新欄位</b>」→ 選「<b>文字</b>」→
+        <b>鍵</b>打 <code>url</code> →
+        <b>值</b>那欄點一下，選鍵盤上方的「<b>捷徑輸入</b>」
+        <div class="warn" style="margin-top:8px">⚠️ 鍵一定要是小寫的
+        <code>url</code>。值必須是<b>藍色的「捷徑輸入」方塊</b>，不是自己打的字。
+        <br><span class="dim">意思是：把 Naver 分享出來的那整段文字
+        （店名＋地址＋短連結）原封不動送給伺服器，伺服器回你一行
+        <code>maps.apple.com/…</code>。選「表單」再加同樣的
+        <code>url</code> 欄位也可以，兩種都收。</span></div>
       </li>
       <li>再搜尋「<b>打開 URL</b>」加進來（這是第 2 個動作）。
         它的欄位預設就會是上一步的結果
