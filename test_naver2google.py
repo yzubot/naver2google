@@ -165,13 +165,12 @@ def test_shortcut_guide_teaches_the_no_safari_flow():
     body = n.SHORTCUT_HTML
     assert "不會經過 Safari" in body
     assert "maps://" in body and "廢除" in body   # 說明舊做法為何不能用
-    # 教學裡的端點不能又變回會轉址的那種
-    assert "https://naver2google.onrender.com/apple" in body
-    # 捷徑的「要求內文」只有 JSON/表單/檔案，沒有「文字」——教學不能寫錯
-    assert "沒有「文字」" in body and "<code>url</code>" in body
-    # 少了「取得文字」會噴 RTF→URL 轉換失敗，教學一定要教這一步
-    # 動作全名是「從輸入項目取得文字」——只寫「取得文字」使用者會找不到
-    assert "從輸入項目取得文字" in body and "RTF" in body
+    # 零設定那條：網址接輸入 + 取得字典值。POST/JSON 那格是折疊的，設錯看不出來
+    assert "https://naver2google.onrender.com/aj/" in body
+    assert "不用設 POST" in body
+    assert "取得字典值" in body and "<code>url</code>" in body
+    # 純文字回應會被捷徑當成 richtext，教學要說明為何走 JSON
+    assert "RTF" in body
 
 
 # -- /a/ /g/ 一個動作用的路徑轉址 -------------------------------------------
@@ -711,3 +710,35 @@ def test_plain_endpoint_still_errors_with_a_status(monkeypatch):
     """非 .json 版維持原本語意（給 curl / 網頁用），不要被上面那條帶壞。"""
     n.app.config["TESTING"] = True
     assert n.app.test_client().get("/apple").status_code == 400
+
+
+
+# -- /aj/ /gj/：零設定的 GET + JSON（捷徑最不容易設錯的一條） ------------------
+def test_path_json_endpoints(monkeypatch):
+    """POST+JSON 那格是折疊的，設錯外面看不出來——使用者連續卡在那裡。
+    把輸入接在網址後面就沒有隱藏設定可以設錯。"""
+    c = _client(monkeypatch)
+    for path, host in (("/aj/", "maps.apple.com"), ("/gj/", "google.com/maps")):
+        r = c.get(path + "https://naver.me/short")
+        assert r.status_code == 200 and r.mimetype == "application/json", path
+        assert host in r.get_json()["url"], path
+
+
+def test_path_json_takes_share_text_with_newlines(monkeypatch):
+    from urllib.parse import quote
+    c = _client(monkeypatch)
+    r = c.get("/aj/" + quote("[NAVER 지도]\n어딘가\nhttps://naver.me/short", safe=""))
+    assert r.status_code == 200
+    assert "maps.apple.com" in r.get_json()["url"]
+
+
+def test_path_json_failure_still_returns_a_url(monkeypatch):
+    """轉不出來也要回 200 + url，否則捷徑的「取得字典值」會爆紅字。"""
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
+    monkeypatch.setattr(n, "_resolve_short_link", lambda u: u)
+    n.app.config["TESTING"] = True
+    r = n.app.test_client().get("/aj/https://naver.me/deadlink")
+    assert r.status_code == 200 and r.mimetype == "application/json"
+    d = r.get_json()
+    assert "maps.apple.com" not in d["url"] and "why=" in d["url"] and d["error"]

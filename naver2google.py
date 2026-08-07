@@ -817,6 +817,9 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
   <div class="card hero">
     <span class="tag tag-a">照著做 ・ 約 2 分鐘</span>
     <h2>建立捷徑（3 個動作，不會經過 Safari）</h2>
+    <div class="note" style="margin-bottom:12px"><b>不用設 POST／JSON／欄位。</b>
+    那些設定藏在折疊起來的「顯示更多」裡，設錯了外面看不出來——
+    改成把分享內容直接接在網址後面，就沒有隱藏設定可以設錯。</div>
     <div class="warn" style="margin-bottom:12px">
       <b>為什麼不是 1 個動作？</b> 只用 1 個動作（直接打開
       <code>…/a/網址</code>）的話，iOS 是先開 <b>Safari</b> 再由網頁轉到地圖——
@@ -831,24 +834,19 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <li>搜尋「<b>取得 URL 內容</b>」→ 點它加進來
         <div class="warn" style="margin-top:8px">⚠️ 別選成「<b>展開 URL</b>」或
         「<b>打開 URL</b>」——這一步要的是「<b>取得</b> URL 內容」。</div></li>
-      <li>在那格的網址欄貼上這段（結尾就是 <code>/apple.json</code>，後面<b>不要</b>接東西）：
-        <pre id="ep">https://naver2google.onrender.com/apple.json</pre>
+      <li>在那格的網址欄貼上這段（<b>結尾的斜線要留著</b>）：
+        <pre id="ep">https://naver2google.onrender.com/aj/</pre>
         <button class="copy" onclick="cp('ep',this)">複製這段網址</button>
       </li>
-      <li>點那一格的「<b>顯示更多</b>」展開 →
-        <b>方法</b>改成 <b>POST</b>
-        <div class="dim" style="margin-top:8px">「要求內文」保持
-        <b>JSON</b>（預設就是）——選單裡只有 JSON／表單／檔案，<b>沒有「文字」</b>。</div>
-      </li>
-      <li>點「<b>加入新欄位</b>」→ 選「<b>文字</b>」→
-        <b>鍵</b>打 <code>url</code> →
-        <b>值</b>那欄點一下，選鍵盤上方的「<b>捷徑輸入</b>」
-        <div class="warn" style="margin-top:8px">⚠️ 鍵一定要是小寫的
-        <code>url</code>。值必須是<b>藍色的「捷徑輸入」方塊</b>，不是自己打的字。
-        <br><span class="dim">意思是：把 Naver 分享出來的那整段文字
-        （店名＋地址＋短連結）原封不動送給伺服器，伺服器回你一行
-        <code>maps.apple.com/…</code>。選「表單」再加同樣的
-        <code>url</code> 欄位也可以，兩種都收。</span></div>
+      <li><b>最關鍵的一步：</b>貼完後游標會停在網址最後面，
+        <b>不要移動它</b>，直接點鍵盤<b>正上方那一排</b>裡的「<b>捷徑輸入</b>」。
+        <div class="warn" style="margin-top:8px">
+        點下去會多出一個藍色小方塊，整格變成
+        <code>…/aj/</code><span style="color:#60a5fa">捷徑輸入</span>。
+        <b>方式、要求內文那些通通不用動</b>（維持 GET）。
+        <br><span class="dim">如果那排沒看到「捷徑輸入」，往左右滑一下，
+        或先點一下網址欄位讓鍵盤出來。
+        <code>/aj/</code> 後面直接接藍色方塊——中間不能有引號或空白。</span></div>
       </li>
       <li>搜尋「<b>取得字典值</b>」加進來 →
         <b>取得</b> 選「<b>值</b>」→ <b>鍵</b>打 <code>url</code>
@@ -874,8 +872,8 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
     </ol>
     <div class="note"><b>好了。</b>到 Naver Map 開任一地點 → <b>分享</b> →
     找到「用 Apple 地圖開啟」→ <b>直接跳進「地圖」App</b>，不經過 Safari。<br>
-    想要 Google 版就再建一個一模一樣的，只把網址結尾的
-    <code>/apple.json</code> 改成 <code>/google.json</code>。</div>
+    想要 Google 版就再建一個一模一樣的，只把網址的
+    <code>/aj/</code> 改成 <code>/gj/</code>。</div>
     <div class="warn"><b>轉不出來的時候會怎樣？</b>
     伺服器查不到精確座標時會回一段錯誤文字（HTTP 422）而<b>不是</b>給你一個
     亂猜的位置——因為實測「拿文字去搜」可能把你送到 1000 公里外。
@@ -906,13 +904,16 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <tr><th>狀況</th><th>怎麼辦</th></tr>
       <tr><td>捷徑沒出現在分享表單</td><td>回捷徑的 ⓘ 確認「在分享表單中顯示」有開、而且勾了 URL</td></tr>
       <tr><td>第一次比較慢</td><td>雲端主機在醒過來，通常 1~2 秒；已設每 8 分鐘保溫</td></tr>
-      <tr><td>「無法從『RTF』轉換到『URL』」</td><td>網址結尾要是 <code>/apple.json</code>，中間要用「<b>取得字典值</b>」（鍵 <code>url</code>）。純文字版會被捷徑當成 richtext</td></tr>
+      <tr><td>「無法從『RTF』轉換到『URL』」</td><td>第一格網址要用 <code>/aj/</code>，中間要用「<b>取得字典值</b>」（鍵 <code>url</code>）。純文字回應會被捷徑當成 richtext</td></tr>
+      <tr><td>開到「捷徑沒有成功轉換」那頁</td><td>那頁的黃色橫幅會直接寫是什麼問題，而且已經幫你轉好一份給你按</td></tr>
       <tr><td>還是先開 Safari</td><td>表示捷徑還是舊的「打開 URL <code>…/a/</code>」一個動作版；照上面改成 2 個動作</td></tr>
-      <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/apple.json</code>（自架版，只有家裡網路通）</td></tr>
+      <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/aj/</code>（自架版，只有家裡網路通）</td></tr>
       <tr><td>回了一段錯誤文字</td><td>那條連結查不到精確座標；刻意不亂猜位置。過幾秒再試或到<a href="/">網頁版</a>看</td></tr>
     </table>
-    <div class="dim" style="margin-top:12px">技術上：<code>/apple.json</code>、<code>/google.json</code>
-    回 <code>{"url": "…"}</code>；<code>/apple</code>、<code>/google</code>
+    <div class="dim" style="margin-top:12px">技術上：<code>/aj/</code>、<code>/gj/</code>
+    把後面接的內容轉好回 <code>{"url": "…"}</code>（零設定，GET 即可）；
+    <code>/apple.json</code>、<code>/google.json</code> 是同樣的東西但走
+    POST 內文；<code>/apple</code>、<code>/google</code>
     回一行純文字網址（GET <code>?url=</code>、POST JSON／表單／純文字內文都收），
     交給捷徑的「打開 URL」就是 universal link，直接進地圖 App。
     <code>/a/</code>、<code>/g/</code>、<code>/m/</code> 則是把 Naver 網址接在路徑後面直接 302，
@@ -1111,6 +1112,55 @@ class _AnyTextConverter(PathConverter):
 app.url_map.converters["anytext"] = _AnyTextConverter
 
 
+def _url_from_path(rest: str) -> str:
+    """Rebuild the Naver link/share text that was appended to our path."""
+    url = rest.strip()
+    if request.query_string:
+        url += "?" + request.query_string.decode("utf-8", "replace")
+    # 使用者手打／貼上時常黏到反引號、引號、角括號或全形空白，先刮掉再判斷。
+    url = url.strip("`\'\"<> \t\u3000")
+    url = re.sub(r"^(https?):/{1,2}", r"\1://", url)      # https:/x → https://x
+    if not url.startswith(("http://", "https://", "nmap://")):
+        # 只有「看起來像裸網域」才補 scheme。分享出來的整段文字（店名、地址、
+        # 甚至「[NAVER 地图]」開頭）不能補——補了會變成 https://[NAVER 地图]…，
+        # urlparse 當成 IPv6 主機直接 ValueError（Invalid IPv6 URL）。
+        # 讓它以原樣進 convert()：裡面會先撈連結，撈不到就當地址搜尋。
+        if re.match(r"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/:?#]|$)", url):
+            url = "https://" + url
+    return url
+
+
+@app.route("/aj/<anytext:rest>")
+@app.route("/gj/<anytext:rest>")
+def api_path_json(rest: str):
+    """同 `/a/`，但回 `{"url": …}` —— 給 iOS 捷徑「取得字典值」用。
+
+    為什麼需要這條：`/apple.json` 要在捷徑裡設 POST + JSON + 一個 `url` 欄位，
+    那格是**折疊起來的**，設錯了外面完全看不出來——使用者連續三次卡在這裡，
+    伺服器收到的是空的。把輸入接在網址後面就沒有任何隱藏設定可以設錯：
+    捷徑第一格只要打「網址 + 捷徑輸入」，跟最早那個一動作版一模一樣。
+
+        取得 URL 內容  https://…/aj/⟦捷徑輸入⟧
+        取得字典值     鍵 url
+        打開 URL
+    """
+    target = "google" if request.path.startswith("/gj/") else "apple"
+    url = _url_from_path(rest)
+    try:
+        result = convert(url)
+    except ConversionFailed as e:
+        return jsonify({"url": _fallback_url(str(e), url), "error": str(e)})
+    except NaverUnavailable as e:
+        msg = f"Naver 暫時無法連線：{e}"
+        return jsonify({"url": _fallback_url(msg, url), "error": msg})
+    except Exception as e:  # noqa: BLE001
+        msg = f"解析失敗：{e}"
+        return jsonify({"url": _fallback_url(msg, url), "error": msg})
+    if not result.get("verified"):
+        return jsonify({"url": _fallback_url(UNVERIFIED_MSG, url), "error": UNVERIFIED_MSG})
+    return jsonify({"url": result[f"{target}_url"]})
+
+
 @app.route("/a/<anytext:rest>")
 @app.route("/g/<anytext:rest>")
 @app.route("/m/<anytext:rest>")
@@ -1131,19 +1181,7 @@ def api_path_redirect(rest: str):
     舊捷徑不用改就會自己變正確。
     """
     target = "google" if request.path.startswith("/g/") else "apple"
-    url = rest.strip()
-    if request.query_string:
-        url += "?" + request.query_string.decode("utf-8", "replace")
-    # 使用者手打／貼上時常黏到反引號、引號、角括號或全形空白，先刮掉再判斷。
-    url = url.strip("`'\"<> \t\u3000")
-    url = re.sub(r"^(https?):/{1,2}", r"\1://", url)      # https:/x → https://x
-    if not url.startswith(("http://", "https://", "nmap://")):
-        # 只有「看起來像裸網域」才補 scheme。分享出來的整段文字（店名、地址、
-        # 甚至「[NAVER 地图]」開頭）不能補——補了會變成 https://[NAVER 地图]…，
-        # urlparse 當成 IPv6 主機直接 ValueError（Invalid IPv6 URL）。
-        # 讓它以原樣進 convert()：裡面會先撈連結，撈不到就當地址搜尋。
-        if re.match(r"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/:?#]|$)", url):
-            url = "https://" + url
+    url = _url_from_path(rest)
     try:
         result = convert(url)
     except ConversionFailed as e:
