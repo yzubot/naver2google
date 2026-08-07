@@ -490,14 +490,16 @@ def test_search_naver_skips_the_paid_listing(monkeypatch):
     assert n._search_naver("명동교자") == (37.5634828, 126.9851666, "명동교자 1호점")
 
 
-def test_search_naver_keeps_naver_order_when_nothing_matches(monkeypatch):
-    """全部都不匹配時，尊重 Naver 自己的排序（不要亂挑）。"""
+def test_search_naver_returns_nothing_when_nothing_matches(monkeypatch):
+    """Naver 對任何字串都會回一堆結果。跟查詢完全沒關係的第一筆不是答案——
+    實測搜一個純數字 place id 會得到「온점 을지로점」（首爾市中心），
+    照收就是一個**看起來很有自信的錯答案**。"""
     class _Resp:
         status_code = 200
         text = _AD_FIRST_HTML
     monkeypatch.setattr(n.SESSION, "get", lambda *a, **k: _Resp())
     n._SEARCH_CACHE.clear()
-    assert n._search_naver("zzz")[2] == "강남교자 센터원점"
+    assert n._search_naver("zzz") is None
 
 
 def test_score_prefers_full_name_inside_share_text():
@@ -742,3 +744,38 @@ def test_path_json_failure_still_returns_a_url(monkeypatch):
     assert r.status_code == 200 and r.mimetype == "application/json"
     d = r.get_json()
     assert "maps.apple.com" not in d["url"] and "why=" in d["url"] and d["error"]
+
+
+
+# -- 分享表單附帶的 place id（純數字那一筆） ----------------------------------
+def test_bare_place_id_uses_the_place_api_not_search(monkeypatch):
+    """Naver 分享除了文字還會附 place id，捷徑把它當一筆輸入送過來。
+    拿數字去「搜尋」只會搜到不相干的店（實測 1186111517 → 온점 을지로점）。"""
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_coords_from_place_api",
+                        lambda pid: (37.5724089, 126.987433, "N285호텔 인사동")
+                        if pid == "1186111517" else None)
+    def boom(_q):
+        raise AssertionError("純數字不可以拿去搜尋")
+    monkeypatch.setattr(n, "_search_naver", boom)
+    r = n.convert("1186111517")
+    assert r["lat"] == 37.5724089 and r["verified"] is True
+
+
+def test_place_id_line_inside_share_text(monkeypatch):
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_resolve_short_link", lambda u: u)
+    monkeypatch.setattr(n, "_coords_from_place_api",
+                        lambda pid: (37.5724089, 126.987433, "N285호텔 인사동")
+                        if pid == "1186111517" else None)
+    r = n.convert("[NAVER 지도]\nN285호텔 인사동\nhttps://naver.me/dead\n1186111517")
+    assert r["lat"] == 37.5724089
+
+
+def test_unknown_place_id_does_not_become_a_number_search(monkeypatch):
+    """id 查不到時也不能退回拿數字去搜尋——寧可回未驗證。"""
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_coords_from_place_api", lambda pid: None)
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
+    r = n.convert("9999999999")
+    assert r["verified"] is False

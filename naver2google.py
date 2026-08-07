@@ -348,6 +348,12 @@ def _search_naver(query: str) -> tuple[float, float, str] | None:
         return None
     # max() keeps the first of equal scores → ties fall back to Naver's ranking.
     best = max(places, key=lambda p: _score_place(p, query))
+    if _score_place(best, query) <= 0:
+        # Nothing in the result even *resembles* what we searched for. Naver
+        # always returns something (searching a bare id once returned 「온점
+        # 을지로점」 in central Seoul), and returning it would be a confident
+        # wrong answer — the exact failure the user kept hitting.
+        return None
     hit = (best["lat"], best["lng"], best["name"])
     if len(_SEARCH_CACHE) >= 512:
         _SEARCH_CACHE.clear()          # 粗暴但夠用：避免長跑無上限成長
@@ -564,6 +570,17 @@ def _convert(naver_url: str) -> dict:
     addr_match = re.search(r"/entry/address/[^,]+,[^,]+,(.+?)(?:\?|$)", url)
     if addr_match:
         return _resolve_by_text(unquote(addr_match.group(1)).strip())
+
+    # Step 3.5a: a bare numeric line is a Naver **place id**, not a search term.
+    # Naver 的分享表單除了文字還會附上 place id，捷徑把它當成一筆輸入送過來；
+    # 拿數字去搜尋只會搜到不相干的店（實測：搜 1186111517 得到「온점 을지로점」）。
+    for line in unquote(raw).splitlines():
+        token = line.strip()
+        if re.fullmatch(r"\d{5,12}", token):
+            hit = _coords_from_place_api(token)
+            if hit:
+                lat, lng, name = hit
+                return _build_result(lat, lng, name)
 
     # Step 3.55: a route link (/p/directions/<from>/<to>/…) — take the destination
     coords = _coords_from_directions(url)
