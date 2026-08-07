@@ -527,6 +527,11 @@ def _convert(naver_url: str) -> dict:
     if not raw:
         return {"error": "空的輸入"}
 
+    # Step 0a0: 只收到分享文字的開頭 = 捷徑沒把空格編碼，網址被 iOS 切掉。
+    # 這種輸入拿去搜尋一定是垃圾結果，直接講清楚怎麼修。
+    if _TRUNCATED_SHARE.match(raw):
+        raise ConversionFailed(TRUNCATED_MSG.format(got=raw[:20]))
+
     # Step 0a: extract URL from multi-line share text
     url = _extract_url(raw)
 
@@ -839,33 +844,45 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
 <body>
 <div class="wrap">
   <h1>在 Naver Map 按分享，直接開 Apple 地圖</h1>
-  <div class="sub">捷徑本身只有<b>一個動作</b>，建一次就永久能用，直接開「地圖」App。</div>
+  <div class="sub">捷徑只有<b>兩個動作</b>，建一次就永久能用，直接開「地圖」App。</div>
 
   <div class="card hero">
-    <span class="tag tag-a">照著做 ・ 6 步 ・ 約 1 分鐘</span>
-    <h2>建立捷徑（只有 1 個動作）</h2>
+    <span class="tag tag-a">照著做 ・ 7 步 ・ 約 1 分鐘</span>
+    <h2>建立捷徑（2 個動作）</h2>
     <div class="note" style="margin-bottom:12px">
       不用 POST、不用 JSON、不用加欄位，也<b>不會經過 Safari</b>——
       網址結尾用 <code>/m/</code>，Safari 會直接把它交給「地圖」App。
     </div>
+    <div class="warn" style="margin-bottom:12px">
+      <b>為什麼需要「URL 編碼」那一步？</b>
+      「打開 URL」把變數接在網址後面時<b>不會把空格編碼</b>，
+      iOS 就在<b>第一個空格</b>把網址切掉——伺服器只會收到
+      <code>[NAVER</code>（Naver 分享文字的開頭），然後拿這串去搜尋就會開到
+      不相干的地方。先做一次「URL 編碼」，整段文字才會完整送到。
+    </div>
     <ol class="steps">
       <li>打開 iPhone 內建的「<b>捷徑</b>」App → 右上角 <b>+</b></li>
-      <li>搜尋「<b>打開 URL</b>」→ 點<b>「打開 URL」</b>那一項
+      <li>搜尋「<b>URL 編碼</b>」→ 加進來（第 1 個動作）
+        <div class="dim" style="margin-top:8px">動作裡有個「<b>編碼</b>／解碼」
+        的選項，維持在「<b>編碼</b>」。它的輸入欄點一下，選鍵盤上方的
+        「<b>捷徑輸入</b>」，變成「URL <b>編碼</b> <span
+        style="color:#60a5fa">捷徑輸入</span>」。
+        <br>搜不到的話搜尋 <b>URL Encode</b>。</div></li>
+      <li>搜尋「<b>打開 URL</b>」→ 點<b>「打開 URL」</b>那一項（第 2 個動作）
         <div class="warn" style="margin-top:8px">⚠️ 搜尋結果裡還有一個很像的
         「<b>展開 URL</b>」——<b>那個是錯的</b>，它只會把短網址還原成長網址。
         要選的是「<b>打開</b> URL」。</div></li>
-      <li>畫面上會出現一格「打開 URL <span class="dim">（空白欄位）</span>」。
-        先按下面的複製鈕，再點那格空白欄位貼上：
+      <li>點那格空白欄位，先按下面的複製鈕貼上這段：
         <pre id="ep">https://naver2google.onrender.com/m/</pre>
         <button class="copy" onclick="cp('ep',this)">複製這段網址</button>
       </li>
       <li><b>最關鍵的一步：</b>貼完後游標會停在網址最後面，
         <b>不要移動它</b>，直接點鍵盤<b>正上方那一排</b>裡的
-        「<b>捷徑輸入</b>」。
-        <div class="dim" style="margin-top:8px">點下去會多出一個藍色小方塊，
-        整格變成 <code>…/m/</code><span style="color:#60a5fa">捷徑輸入</span>。
-        如果那排沒看到「捷徑輸入」，往左右滑一下，或先點一下欄位讓鍵盤出來。
-        <code>/m/</code> 後面直接接藍色方塊——中間<b>不能有引號、反引號或空白</b>。</div></li>
+        「<b>URL 編碼過的文字</b>」（上一個動作的結果，
+        <b>不是</b>「捷徑輸入」）。
+        <div class="dim" style="margin-top:8px">點下去會多出一個小方塊，
+        整格變成 <code>…/m/</code><span style="color:#60a5fa">URL 編碼過的文字</span>。
+        <code>/m/</code> 後面直接接那個方塊——中間<b>不能有引號、反引號或空白</b>。</div></li>
       <li>點畫面最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
       <li>點名稱旁邊的 <b>ⓘ</b> → 把「<b>在分享表單中顯示</b>」打開 →
         「分享表單類型」要勾 <b>URL</b> <u>和</u> <b>文字</b> → 右上角<b>完成</b>
@@ -929,6 +946,7 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <tr><td>「無法從『RTF』轉換到『URL』」</td><td>第一格網址要用 <code>/aj/</code>，中間要用「<b>取得字典值</b>」（鍵 <code>url</code>）。純文字回應會被捷徑當成 richtext</td></tr>
       <tr><td>跳出「選擇一個項目」</td><td>只有進階版會遇到：第一格少了「<b>文字</b>」動作。Naver 一次送兩筆（文字＋place id），要先壓成一段</td></tr>
       <tr><td>開到「捷徑沒有成功轉換」那頁</td><td>那頁的黃色橫幅會直接寫是什麼問題，而且已經幫你轉好一份給你按</td></tr>
+      <tr><td>開到「捷徑送過來的內容被截斷了」</td><td>少了第一格的「<b>URL 編碼</b>」動作，或第二格接的還是「捷徑輸入」而不是編碼後的結果</td></tr>
       <tr><td>停在 Safari 的網頁地圖</td><td>網址結尾要用 <code>/m/</code>（不是 <code>/a/</code>）——<code>/a/</code> 是跨網域轉址，iOS 的 universal link 不吃</td></tr>
       <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/m/</code>（自架版，只有家裡網路通）</td></tr>
       <tr><td>回了一段錯誤文字</td><td>那條連結查不到精確座標；刻意不亂猜位置。過幾秒再試或到<a href="/">網頁版</a>看</td></tr>
@@ -1149,6 +1167,19 @@ def _app_scheme(apple_url: str) -> str:
     一個動作、不經過 Safari。
     """
     return re.sub(r"^https://maps\.apple\.com/", "maps://", apple_url)
+
+
+# 「打開 URL」把變數直接接在網址後面時，**空格不會被百分比編碼**，iOS 就在第一個
+# 空格把網址切掉——伺服器只收到 Naver 分享文字的開頭「[NAVER」。這是使用者
+# 一路遇到「開到奇怪地點」的最終原因：我們拿 "[NAVER" 去搜尋，撿到市中心的店。
+_TRUNCATED_SHARE = re.compile(r"^\[?\s*NAVER\s*(地图|지도|Map)?\]?$", re.I)
+
+TRUNCATED_MSG = (
+    "捷徑送過來的內容被截斷了（伺服器只收到「{got}」）。"
+    "原因是「打開 URL」不會把空格編碼，iOS 就在第一個空格把網址切掉。"
+    "解法：在「打開 URL」前面加一個「URL 編碼」動作，"
+    "把「捷徑輸入」先編碼再接到網址後面。詳細步驟看 /shortcut。"
+)
 
 
 def _url_from_path(rest: str) -> str:

@@ -165,8 +165,9 @@ def test_shortcut_guide_teaches_the_no_safari_flow():
     body = n.SHORTCUT_HTML
     # 主推：一個動作 + /m/（App scheme，不經過 Safari）
     assert "https://naver2google.onrender.com/m/" in body
-    assert "只有 1 個動作" in body and "不會經過 Safari" in body
-    assert "捷徑輸入" in body
+    assert "2 個動作" in body and "不會經過 Safari" in body
+    # 沒有 URL 編碼，iOS 會在第一個空格切掉網址——教學一定要教這步
+    assert "URL 編碼" in body and "[NAVER" in body
     # 進階版（完全不碰瀏覽器）也要留著，含它的兩個坑
     assert "https://naver2google.onrender.com/aj/" in body
     assert "取得字典值" in body and "RTF" in body
@@ -822,3 +823,41 @@ def test_short_numbers_are_not_treated_as_place_ids(monkeypatch):
     monkeypatch.setattr(n, "_search_naver", lambda q: None)
     n.convert("서울특별시 종로구 낙원동 285 04523")
     assert "285" not in called      # 3 位數不算
+
+
+
+# -- 被 iOS 在第一個空格切掉的分享文字 ----------------------------------------
+def test_truncated_share_text_is_explained_not_searched():
+    """「打開 URL」不會把空格編碼 → iOS 在第一個空格切斷 → 伺服器只收到
+    「[NAVER」。拿它去搜尋就是使用者一路遇到的「開到奇怪地點」。"""
+    import pytest
+    for got in ("[NAVER", "[NAVER 지도]", "[NAVER 地图]", "NAVER", "[naver"):
+        n.convert.cache_clear()
+        with pytest.raises(n.ConversionFailed) as e:
+            n.convert(got)
+        assert "截斷" in str(e.value) and "URL 編碼" in str(e.value), got
+
+
+def test_truncated_message_reaches_the_shortcut(monkeypatch):
+    """一格版走 /m/，錯誤要變成「開一頁說明」而不是死路訊息。"""
+    n.convert.cache_clear()
+    n.app.config["TESTING"] = True
+    r = n.app.test_client().get("/m/[NAVER")
+    assert r.status_code == 302
+    loc = r.headers["Location"]
+    assert "why=" in loc and "maps" not in loc.split("why=")[0]
+
+
+def test_fully_encoded_share_text_still_works(monkeypatch):
+    """加了 URL 編碼之後送過來的樣子——整段都在，就能正常轉。"""
+    from urllib.parse import quote
+    n.convert.cache_clear()
+    monkeypatch.setattr(n, "_resolve_short_link", lambda u: u)
+    monkeypatch.setattr(n, "_coords_from_place_api",
+                        lambda pid: (37.5724089, 126.987433, "N285호텔 인사동")
+                        if pid == "1186111517" else None)
+    n.app.config["TESTING"] = True
+    payload = "[NAVER 지도]\nN285호텔 인사동\nhttps://naver.me/dead\n1186111517"
+    r = n.app.test_client().get("/m/" + quote(payload, safe=""))
+    assert r.status_code == 200
+    assert "maps://?ll=37.5724089,126.987433" in r.get_data(as_text=True)
