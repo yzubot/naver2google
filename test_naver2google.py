@@ -64,8 +64,10 @@ def test_convert_place_link(monkeypatch):
     assert r["lat"] == 37.5 and r["name"] == "테스트"
 
 
-def test_convert_address_fallback():
+def test_convert_address_fallback(monkeypatch):
+    """Naver 也查不到時，才退回讓地圖 App 自己搜文字。"""
     n.convert.cache_clear()
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
     r = n.convert("서울특별시 중구 저동2가 89")
     assert r["lat"] is None and "google.com/maps/search" in r["google_url"]
 
@@ -378,6 +380,7 @@ def test_convert_refuses_to_search_a_bare_url(monkeypatch):
 
 def test_convert_share_text_falls_back_to_name_not_url(monkeypatch):
     n.convert.cache_clear()
+    monkeypatch.setattr(n, "_search_naver", lambda q: None)
     monkeypatch.setattr(n, "_resolve_short_link", lambda u: u)
     r = n.convert("[NAVER 지도]\nN285호텔 인사동\n서울특별시 종로구 낙원동 285\nhttps://naver.me/dead")
     assert "naver" not in r["name"] and "http" not in r["name"]
@@ -397,3 +400,82 @@ def test_path_redirect_reports_failure_instead_of_jumping(monkeypatch):
     r = n.app.test_client().get("/a/https://naver.me/deadlink")
     assert r.status_code == 422           # 不是 302 —— 絕不能把人送到錯的地方
     assert "Location" not in r.headers
+
+
+# -- Naver 反查座標（fallback 從「猜」變成「查」） ------------------------------
+_SEARCH_HTML = """<html><script>
+  window.__RQ_STREAMING_STATE__.push({"queries":[{"state":{"data":{
+    "item":{"myLocation":{"latitude":37.5664267,"longitude":126.9778715}},
+    "items":[{"name":"N285호텔 인사동","latitude":37.5724089,"longitude":126.987433,
+              "address":"서울특별시 종로구 낙원동 285"}]}}}]})
+</script></html>"""
+
+
+def test_collect_places_skips_my_location():
+    """myLocation 排在結果前面且是「首爾市中心」預設值 —— 撿到它=每次都釘錯點。"""
+    blob = next(n._iter_state_blobs(_SEARCH_HTML))
+    places = n._collect_places(blob)
+    assert [p["name"] for p in places] == ["N285호텔 인사동"]
+    assert (places[0]["lat"], places[0]["lng"]) == (37.5724089, 126.987433)
+
+
+def test_search_naver_returns_exact_coords(monkeypatch):
+    class _Resp:
+        status_code = 200
+        text = _SEARCH_HTML
+    monkeypatch.setattr(n.SESSION, "get", lambda *a, **k: _Resp())
+    n._search_naver.cache_clear()
+    assert n._search_naver("N285호텔 인사동") == (37.5724089, 126.987433, "N285호텔 인사동")
+
+
+def test_resolve_by_text_prefers_geocode_over_blind_search(monkeypatch):
+    monkeypatch.setattr(n, "_search_naver", lambda q: (37.5724089, 126.987433, "N285"))
+    r = n._resolve_by_text("N285호텔 인사동")
+    assert r["lat"] == 37.5724089                       # 精確座標，不是丟去搜
+    assert r["apple_url"].startswith("https://maps.apple.com/?ll=37.5724089,126.987433")
+
+
+def test_search_naver_network_error_is_not_fatal(monkeypatch):
+    import requests
+    def boom(*a, **k):
+        raise requests.RequestException("down")
+    monkeypatch.setattr(n.SESSION, "get", boom)
+    n._search_naver.cache_clear()
+    assert n._search_naver("아무거나") is None          # 加分路徑失敗不該炸掉整條轉換
+
+
+_AD_FIRST_HTML = """<html><script>
+  window.__RQ_STREAMING_STATE__.push({"queries":[{"state":{"data":{"items":[
+    {"name":"강남교자 센터원점","latitude":37.5674482,"longitude":126.9851758,
+     "address":"서울특별시 중구 수하동 67"},
+    {"name":"명동교자 1호점","latitude":37.5634828,"longitude":126.9851666,
+     "address":"서울특별시 중구 명동2가 33-4"}]}}}]})
+</script></html>"""
+
+
+def test_search_naver_skips_the_paid_listing(monkeypatch):
+    """Naver 把廣告排第一：搜「명동교자」第一筆是「강남교자」——照抄第一筆就送錯地方。"""
+    class _Resp:
+        status_code = 200
+        text = _AD_FIRST_HTML
+    monkeypatch.setattr(n.SESSION, "get", lambda *a, **k: _Resp())
+    n._search_naver.cache_clear()
+    assert n._search_naver("명동교자") == (37.5634828, 126.9851666, "명동교자 1호점")
+
+
+def test_search_naver_keeps_naver_order_when_nothing_matches(monkeypatch):
+    """全部都不匹配時，尊重 Naver 自己的排序（不要亂挑）。"""
+    class _Resp:
+        status_code = 200
+        text = _AD_FIRST_HTML
+    monkeypatch.setattr(n.SESSION, "get", lambda *a, **k: _Resp())
+    n._search_naver.cache_clear()
+    assert n._search_naver("zzz")[2] == "강남교자 센터원점"
+
+
+def test_score_prefers_full_name_inside_share_text():
+    share = "N285호텔 인사동 서울특별시 종로구 낙원동 285"
+    exact = {"name": "N285호텔 인사동", "address": "서울특별시 종로구 낙원동 285"}
+    nearby = {"name": "더하노이풋앤바디 N285호텔 인사동점",
+              "address": "서울특별시 종로구 낙원동 285 지하2층"}
+    assert n._score_place(exact, share) > n._score_place(nearby, share)

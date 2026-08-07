@@ -14,6 +14,7 @@ Redirect: GET  /go?url=NAVER_URL[&target=apple] → 302 到 Google/Apple Maps
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 from functools import lru_cache
@@ -188,6 +189,132 @@ def _coords_from_map_params(url: str) -> tuple[float, float] | None:
         return None
 
 
+SEARCH_PAGE = "https://m.map.naver.com/search2/search.naver?query={}&sm=hty&style=v5"
+
+
+def _iter_state_blobs(html: str):
+    """Yield each `__RQ_STREAMING_STATE__.push({…})` payload as a dict.
+
+    The page is React SSR: the search results are hydrated from these blobs.
+    raw_decode (not a regex) finds each object's end — the JSON contains nested
+    braces and escaped quotes that no sane regex survives.
+    """
+    decoder = json.JSONDecoder()
+    for m in re.finditer(r"__RQ_STREAMING_STATE__\.push\(", html):
+        try:
+            obj, _ = decoder.raw_decode(html[html.index("(", m.start()) + 1:])
+        except ValueError:
+            continue
+        yield obj
+
+
+def _collect_places(node, out: list | None = None) -> list[dict]:
+    """Every {name, latitude, longitude} entry in the blob, in document order.
+
+    Requiring `name` is what skips the `myLocation` entry that sits *before* the
+    results — that one is Naver's server-side default (central Seoul), and
+    returning it would silently pin every search to the wrong spot.
+    """
+    out = [] if out is None else out
+    if isinstance(node, dict):
+        lat, lng, name = node.get("latitude"), node.get("longitude"), node.get("name")
+        if lat is not None and lng is not None and name:
+            try:
+                out.append({
+                    "lat": float(lat), "lng": float(lng), "name": str(name),
+                    "address": " ".join(
+                        str(node.get(k) or "") for k in ("address", "roadAddress")),
+                })
+            except (TypeError, ValueError):
+                pass
+        for value in node.values():
+            _collect_places(value, out)
+    elif isinstance(node, list):
+        for value in node:
+            _collect_places(value, out)
+    return out
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", "", text).lower()
+
+
+def _score_place(place: dict, query: str) -> int:
+    """How well a search hit matches what the user actually shared.
+
+    Naver puts a **paid listing first** — searching 「명동교자」 returns
+    「강남교자 센터원점」 at the top. Taking result #1 therefore lands you at a
+    real Korean restaurant that simply isn't the one you tapped. Rank by name
+    overlap instead, and only trust Naver's own order when nothing matches.
+    """
+    nq, nn = _norm(query), _norm(place["name"])
+    if not nn:
+        return 0
+    if nn == nq:
+        return 100
+    if nn in nq:                       # 分享文字含完整店名 —— 最強訊號
+        return 70 + int(20 * len(nn) / max(len(nq), 1))
+    if nq in nn:                       # 使用者只打了店名的一部分
+        return 60
+    score = 0
+    addr = _norm(place["address"])
+    for token in {t for t in query.split() if len(t) >= 2}:
+        nt = _norm(token)
+        if nt and nt in nn:
+            score += 12
+        elif nt and nt in addr:
+            score += 4
+    return score
+
+
+@lru_cache(maxsize=256)
+def _search_naver(query: str) -> tuple[float, float, str] | None:
+    """Geocode 店名／地址 through Naver's own search → exact coordinates.
+
+    Why not just hand the text to Apple/Google: they rank by *the user's*
+    location, so a Korean店名 can match something else entirely. Naver knows
+    exactly which place the share text meant — resolve it here, then send the
+    map app coordinates instead of a guess.
+    """
+    query = query.strip()
+    if not query:
+        return None
+    try:
+        resp = SESSION.get(SEARCH_PAGE.format(quote(query)), timeout=10)
+    except http_client.RequestException:
+        return None  # 純加分路徑：查不到就退回文字搜尋，不要讓整條轉換失敗
+    if resp.status_code != 200:
+        return None
+
+
+@lru_cache(maxsize=256)
+def _search_naver(query: str) -> tuple[float, float, str] | None:
+    """Geocode 店名／地址 through Naver's own search → exact coordinates.
+
+    Why not just hand the text to Apple/Google: they rank by *the user's*
+    location, so a Korean店名 can match something else entirely. Naver knows
+    exactly which place the share text meant — resolve it here, then send the
+    map app coordinates instead of a guess.
+    """
+    query = query.strip()
+    if not query:
+        return None
+    try:
+        resp = SESSION.get(SEARCH_PAGE.format(quote(query)), timeout=10)
+    except http_client.RequestException:
+        return None  # 純加分路徑：查不到就退回文字搜尋，不要讓整條轉換失敗
+    if resp.status_code != 200:
+        return None
+    places: list[dict] = []
+    for blob in _iter_state_blobs(resp.text):
+        _collect_places(blob, places)
+    if not places:
+        return None
+    # max() keeps the first of equal scores → ties fall back to Naver's ranking.
+    best = max(places, key=lambda p: _score_place(p, query))
+    return best["lat"], best["lng"], best["name"]
+
+
 def _coords_from_at_pattern(url: str) -> tuple[float, float] | None:
     """Extract coordinates from @lat,lng pattern in URL."""
     m = re.search(r"@(-?\d+\.\d+),(-?\d+\.\d+)", url)
@@ -302,6 +429,16 @@ def _search_result(query: str) -> dict:
     }
 
 
+def _resolve_by_text(query: str) -> dict:
+    """No coordinates in the link — ask Naver where this text is, and only if
+    Naver can't say, fall back to letting the map app search it."""
+    hit = _search_naver(query)
+    if hit:
+        lat, lng, name = hit
+        return _build_result(lat, lng, name)
+    return _search_result(query)
+
+
 @lru_cache(maxsize=512)
 def convert(naver_url: str) -> dict:
     """Main conversion: Naver URL → {lat, lng, name, google_url, apple_url}.
@@ -356,7 +493,12 @@ def convert(naver_url: str) -> dict:
     # Step 3.5: address entry URL (/entry/address/CODE,CODE,address)
     addr_match = re.search(r"/entry/address/[^,]+,[^,]+,(.+?)(?:\?|$)", url)
     if addr_match:
-        return _search_result(unquote(addr_match.group(1)).strip())
+        return _resolve_by_text(unquote(addr_match.group(1)).strip())
+
+    # Step 3.6: a search URL (/p/search/<query>) — geocode the query itself
+    search_match = re.search(r"/(?:p/)?search/([^/?#]+)", url)
+    if search_match:
+        return _resolve_by_text(unquote(search_match.group(1)).strip())
 
     # Step 4: fallback — search the *human* part of the share text (店名+地址).
     # Never the URL itself: searching "https://naver.me/xxxx" makes the map app
@@ -367,7 +509,7 @@ def convert(naver_url: str) -> dict:
         raise ConversionFailed(
             "這條連結抓不到座標，也沒有店名／地址可以搜尋。"
             "請改用 Naver 地圖的「分享」整段文字，或換一條 place 連結。")
-    return _search_result(query)
+    return _resolve_by_text(query)
 
 
 # ---------------------------------------------------------------------------
