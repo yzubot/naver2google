@@ -307,11 +307,10 @@ def test_path_redirect_share_text_without_link(monkeypatch):
     monkeypatch.setattr(n, "_search_naver", lambda q: None)   # 不打真的網路
     from urllib.parse import quote
     r = c.get("/a/" + quote("[NAVER 地图]\nN285酒店仁寺洞", safe=""))
-    # Naver 查不到座標時「不轉址」才是對的（302 到未驗證的搜尋 = 可能送錯地方），
-    # 重點是不能 500/502，也不能把「[NAVER 地图]」當網域去解析。
-    assert r.status_code == 422
-    assert "Location" not in r.headers
-    assert "不轉址" in r.get_data(as_text=True)
+    # 查不到座標時要送到「自家說明頁」，不是地圖，也不是一句純文字錯誤。
+    assert r.status_code == 302
+    loc = r.headers["Location"]
+    assert "maps.apple.com" not in loc and "why=" in loc
 
 
 def test_path_redirect_does_not_prepend_scheme_to_plain_text(monkeypatch):
@@ -320,7 +319,8 @@ def test_path_redirect_does_not_prepend_scheme_to_plain_text(monkeypatch):
     monkeypatch.setattr(n, "_search_naver", lambda q: None)   # 不打真的網路
     from urllib.parse import quote
     r = c.get("/a/" + quote("首尔特别市 钟路区 乐园洞 285", safe=""))
-    assert r.status_code == 422       # 未驗證就不轉址；重點是沒有 502(urlparse 炸掉)
+    # 送到說明頁；重點是沒有 502（urlparse 把中文當網域炸掉）
+    assert r.status_code == 302 and "why=" in r.headers["Location"]
 
 
 # -- /m/：一個動作、直接開地圖 App（universal link 不吃跨網域 302） ----------
@@ -350,7 +350,10 @@ def test_m_route_never_jumps_to_an_unverified_guess(monkeypatch):
     monkeypatch.setattr(n, "_search_naver", lambda q: None)
     n.app.config["TESTING"] = True
     r = n.app.test_client().get("/m/서울특별시 중구 저동2가 89")
-    assert r.status_code == 422 and "maps://" not in r.get_data(as_text=True)
+    assert r.status_code == 302
+    assert "maps://" not in r.headers["Location"]
+    assert "maps.apple.com" not in r.headers["Location"]
+    assert "why=" in r.headers["Location"]
 
 
 def test_a_route_still_plain_redirect(monkeypatch):
@@ -432,8 +435,10 @@ def test_path_redirect_reports_failure_instead_of_jumping(monkeypatch):
     monkeypatch.setattr(n, "_resolve_short_link", lambda u: u)
     n.app.config["TESTING"] = True
     r = n.app.test_client().get("/a/https://naver.me/deadlink")
-    assert r.status_code == 422           # 不是 302 —— 絕不能把人送到錯的地方
-    assert "Location" not in r.headers
+    assert r.status_code == 302
+    loc = r.headers["Location"]
+    assert "maps.apple.com" not in loc and "google.com/maps" not in loc
+    assert "why=" in loc and "q=" in loc   # 帶著原因與原始輸入去說明頁
 
 
 # -- Naver 反查座標（fallback 從「猜」變成「查」） ------------------------------
@@ -609,8 +614,11 @@ def test_redirect_refuses_unverified_result(monkeypatch):
     c = n.app.test_client()
     for path in ("/a/", "/g/", "/m/"):
         r = c.get(path + "서울특별시 중구 저동2가 89")
-        assert r.status_code == 422, path
-        assert "Location" not in r.headers, path
+        assert r.status_code == 302, path
+        loc = r.headers["Location"]
+        # 可以轉到自家說明頁，但**絕不能**轉到沒驗證的地圖位置
+        assert "maps.apple.com" not in loc and "google.com/maps" not in loc, path
+        assert "why=" in loc, path
 
 
 def test_plain_endpoints_refuse_unverified_result(monkeypatch):

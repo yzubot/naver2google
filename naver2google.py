@@ -665,6 +665,10 @@ button{width:100%;padding:10px;border:none;border-radius:8px;cursor:pointer;
     <div id="why-msg" style="font-size:.9rem;line-height:1.6"></div>
     <div class="hint" style="margin-top:10px">下面已經幫你把原始內容貼好並轉了一次。
     如果結果看起來是對的，直接按按鈕開地圖就好。</div>
+    <div class="hint" style="margin-top:10px">伺服器收到的原始內容：</div>
+    <pre id="why-raw" style="white-space:pre-wrap;word-break:break-all;
+      background:#0f172a;border:1px solid #334155;border-radius:8px;
+      padding:10px;font-size:.78rem;margin-top:4px;max-height:140px;overflow:auto"></pre>
   </div>
   <div class="card">
     <label for="url-input">貼上 Naver Map 連結、或直接輸入地址</label>
@@ -758,6 +762,8 @@ async function doConvert(){
   }
   if(q){
     document.getElementById('url-input').value=q;
+    const raw=document.getElementById('why-raw');
+    if(raw)raw.textContent=q;
     doConvert();
   }
 })();
@@ -1219,20 +1225,20 @@ def api_path_redirect(rest: str):
         # /m/ = 直接叫醒「地圖」App（maps://），/a/ = 一般 https 連結
         target, app_scheme = "apple", request.path.startswith("/m/")
     url = _url_from_path(rest)
+    # 轉不出來時**不要**回一頁純文字錯誤：使用者只看得到一句話，既不知道伺服器
+    # 到底收到什麼，也沒有下一步。改成送到自己的說明頁（帶著原因和原始輸入），
+    # 那頁會把內容貼好、再幫忙搜一次。錯誤路徑轉址到自家頁面是安全的——
+    # 我們拒絕的是「把人轉到沒驗證的地圖位置」。
     try:
         result = convert(url)
     except ConversionFailed as e:
-        return Response(str(e), status=422,
-                        content_type="text/plain; charset=utf-8")
+        return redirect(_fallback_url(str(e), url))
     except NaverUnavailable as e:
-        return Response(f"Naver 暫時無法連線：{e}", status=503,
-                        content_type="text/plain; charset=utf-8")
+        return redirect(_fallback_url(f"Naver 暫時無法連線：{e}", url))
     except Exception as e:  # noqa: BLE001
-        return Response(f"解析失敗：{e}", status=502,
-                        content_type="text/plain; charset=utf-8")
-    bail = _unverified(result)
-    if bail:
-        return bail
+        return redirect(_fallback_url(f"解析失敗：{e}", url))
+    if not result.get("verified"):
+        return redirect(_fallback_url(UNVERIFIED_MSG, url))
     dest = result[f"{target}_url"]
     if not app_scheme:
         return redirect(dest)

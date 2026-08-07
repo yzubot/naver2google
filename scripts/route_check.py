@@ -55,9 +55,13 @@ r = s.get(f"{B}/go", params={"url": PLACE, "target": "apple"}, allow_redirects=F
 ok &= chk("/go?target=apple", r.status_code == 302 and "maps.apple.com" in r.headers.get("Location", ""),
           f"{r.status_code} {r.headers.get('Location','')[:90]}")
 
+# 轉不出來 → 送到自家說明頁（帶原因+原始輸入），但絕不能是地圖網址
 r = s.get(f"{B}/a/https://naver.me/zzdead9", allow_redirects=False, timeout=40)
-ok &= chk("dead link → 422 (no redirect)", r.status_code == 422 and "Location" not in r.headers,
-          f"{r.status_code} {r.headers.get('Location','')}")
+loc = r.headers.get("Location", "")
+ok &= chk("dead link → 說明頁 (never a map)",
+          r.status_code == 302 and "why=" in loc
+          and "maps.apple.com" not in loc and "google.com/maps" not in loc,
+          f"{r.status_code} {loc[:80]}")
 
 r = s.get(f"{B}/apple", timeout=20);             ok &= chk("/apple no url → 400", r.status_code == 400)
 r = s.get(f"{B}/dl/x.shortcut", timeout=20);     ok &= chk("/dl → 410", r.status_code == 410)
