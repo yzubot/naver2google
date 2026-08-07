@@ -154,8 +154,19 @@ def test_shortcut_guide_page(monkeypatch):
     r = c.get("/shortcut")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "打開 URL" in body and "/a/" in body
+    assert "取得 URL 內容" in body and "打開 URL" in body
+    assert "/apple" in body                 # 教學要教「拿最終網址再打開」那條路
     assert "未簽署的捷徑檔案" in body        # 說明為什麼沒有下載版
+
+
+def test_shortcut_guide_teaches_the_no_safari_flow():
+    """一個動作的 /a/ 會先開 Safari（universal link 不吃跨網域轉址）；
+    教學必須是「先取得最終網址，再打開它」的兩動作版。"""
+    body = n.SHORTCUT_HTML
+    assert "不會經過 Safari" in body
+    assert "maps://" in body and "廢除" in body   # 說明舊做法為何不能用
+    # 教學裡的端點不能又變回會轉址的那種
+    assert "https://naver2google.onrender.com/apple" in body
 
 
 # -- /a/ /g/ 一個動作用的路徑轉址 -------------------------------------------

@@ -791,49 +791,58 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
 </head>
 <body>
 <div class="wrap">
-  <h1>在 Naver Map 按分享，一鍵開 Apple 地圖</h1>
-  <div class="sub">捷徑本身只有<b>一個動作</b>，建一次就永久能用。跟著下面 6 步做。</div>
+  <h1>在 Naver Map 按分享，直接開 Apple 地圖</h1>
+  <div class="sub">2 個動作、建一次就永久能用，而且<b>直接開「地圖」App，不經過 Safari</b>。</div>
 
   <div class="card hero">
-    <span class="tag tag-a">照著做 ・ 6 步 ・ 約 1 分鐘</span>
-    <h2>手動建立（只有 1 個動作）</h2>
+    <span class="tag tag-a">照著做 ・ 約 2 分鐘</span>
+    <h2>建立捷徑（2 個動作，不會經過 Safari）</h2>
+    <div class="warn" style="margin-bottom:12px">
+      <b>為什麼是 2 個動作？</b> 只用 1 個動作（直接打開
+      <code>…/a/網址</code>）的話，iOS 是先開 <b>Safari</b> 再由網頁轉到地圖——
+      因為 <b>universal link 不會因為跨網域轉址而觸發</b>。
+      改成「先拿到最終的 <code>maps.apple.com</code> 網址、再打開它」，
+      iOS 就會<b>直接開「地圖」App</b>。<br>
+      （更早的 <code>/m/</code> 是丟 <code>maps://</code> 想硬叫醒 App，
+      <b>實測地圖 App 會把座標整個丟掉</b>，每個地點都開在首爾市中心——已經廢除。）
+    </div>
     <ol class="steps">
       <li>打開 iPhone 內建的「<b>捷徑</b>」App → 右上角 <b>+</b></li>
-      <li>上面有個搜尋框，打「<b>打開 URL</b>」→ 點<b>「打開 URL」</b>那一項
-        <div class="warn" style="margin-top:8px">⚠️ 搜尋結果裡還有一個很像的
-        「<b>展開 URL</b>」——<b>那個是錯的</b>，它只會把短網址還原成長網址，
-        不會打開任何東西。要選的是「<b>打開</b> URL」。</div></li>
-      <li>畫面上會出現一格「打開 URL <span class="dim">（空白欄位）</span>」。
-        先按下面的複製鈕，再點那格空白欄位貼上：
-        <pre id="ep">https://naver2google.onrender.com/m/</pre>
+      <li>搜尋「<b>取得 URL 內容</b>」→ 點它加進來
+        <div class="warn" style="margin-top:8px">⚠️ 別選成「<b>展開 URL</b>」或
+        「<b>打開 URL</b>」——這一步要的是「<b>取得</b> URL 內容」。</div></li>
+      <li>在那格的網址欄貼上這段（結尾就是 <code>/apple</code>，後面<b>不要</b>接東西）：
+        <pre id="ep">https://naver2google.onrender.com/apple</pre>
         <button class="copy" onclick="cp('ep',this)">複製這段網址</button>
-        <div class="dim" style="margin-top:8px">結尾是 <code>/m/</code>——
-        會直接叫醒「地圖」App。如果用 <code>/a/</code> 會停在 Safari 的
-        網頁版地圖（iOS 的 universal link 不吃跨網域轉址）。</div>
       </li>
-      <li><b>最關鍵的一步：</b>貼完後游標會停在網址最後面，
-        <b>不要移動它</b>，直接點鍵盤<b>正上方那一排</b>裡的
-        「<b>捷徑輸入</b>」。<br>
-        <span class="dim">點下去會多出一個藍色小方塊，變成
-        <code>…/a/ 捷徑輸入</code>。如果那排沒看到「捷徑輸入」，
-        往左右滑一下，或先點一下網址欄位讓鍵盤出來。<br>
-        網址結尾必須就是 <code>/a/</code> 後面直接接藍色方塊——中間<b>不能有
-        引號、反引號或空白</b>（貼上時很容易黏到）。</span></li>
-      <li>點畫面最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
-      <li>點名稱旁邊的 <b>ⓘ</b> → 把「<b>在分享表單中顯示</b>」打開 →
-        下面「分享表單類型」要勾 <b>URL</b> <u>和</u> <b>文字</b>
-        → 右上角<b>完成</b>
+      <li>點那一格的「<b>顯示更多</b>」展開 →
+        <b>方法</b>改成 <b>POST</b> →
+        <b>請求內文</b>改成 <b>檔案</b>或<b>文字</b>（有「文字」就選文字）→
+        內容那欄點一下，選鍵盤上方的「<b>捷徑輸入</b>」
+        <div class="dim" style="margin-top:8px">意思是：把 Naver 分享出來的
+        那整段文字原封不動送給伺服器，伺服器回你一行 <code>maps.apple.com/…</code>。</div>
+      </li>
+      <li>再搜尋「<b>打開 URL</b>」加進來（這是第 2 個動作）。
+        它的欄位預設就會是上一步的結果
+        （顯示為 <b>「取得 URL 內容」的內容</b>）——<b>維持原樣就對了</b>。
+        <div class="dim" style="margin-top:8px">如果那格是空的，點一下它，
+        選「<b>取得 URL 內容</b>」那個變數。</div>
+      </li>
+      <li>點最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
+      <li>點名稱旁的 <b>ⓘ</b> → 打開「<b>在分享表單中顯示</b>」→
+        分享表單類型要勾 <b>URL</b> <u>和</u> <b>文字</b> → 右上角<b>完成</b>
         <div class="warn" style="margin-top:8px">⚠️ <b>「文字」一定要勾。</b>
-        Naver Map 分享出來的其實是一整段文字（店名＋地址＋短連結），
-        不是單純一個網址——<b>只勾 URL 的話，捷徑根本不會出現在分享表單裡</b>。
-        伺服器會自己從那段文字裡把連結挑出來，所以勾了不會有副作用。</div></li>
+        Naver Map 分享出來的是一整段文字（店名＋地址＋短連結），不是單純網址——
+        只勾 URL 的話捷徑<b>根本不會出現</b>在分享表單裡。</div></li>
     </ol>
     <div class="note"><b>好了。</b>到 Naver Map 開任一地點 → <b>分享</b> →
-    往下滑找到「用 Apple 地圖開啟」→ 直接跳進 Apple 地圖。<br>
-    想要 Google 版就再建一個一模一樣的，只是網址結尾改成 <code>/g/</code>。</div>
-    <div class="warn">已經建好、但打開後停在 <b>Safari 的網頁地圖</b>
-    （網址變成 <code>maps.apple/p/xxxx</code>）？
-    把動作裡的網址從 <code>/a/</code> 改成 <code>/m/</code> 就好，其他都不用動。</div>
+    找到「用 Apple 地圖開啟」→ <b>直接跳進「地圖」App</b>，不經過 Safari。<br>
+    想要 Google 版就再建一個一模一樣的，只把網址結尾的
+    <code>/apple</code> 改成 <code>/google</code>。</div>
+    <div class="warn"><b>轉不出來的時候會怎樣？</b>
+    伺服器查不到精確座標時會回一段錯誤文字（HTTP 422）而<b>不是</b>給你一個
+    亂猜的位置——因為實測「拿文字去搜」可能把你送到 1000 公里外。
+    看到錯誤就過幾秒再試一次，或到<a href="/">網頁版</a>看搜尋結果對不對。</div>
   </div>
 
   <div class="card">
@@ -860,12 +869,15 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <tr><th>狀況</th><th>怎麼辦</th></tr>
       <tr><td>捷徑沒出現在分享表單</td><td>回捷徑的 ⓘ 確認「在分享表單中顯示」有開、而且勾了 URL</td></tr>
       <tr><td>第一次比較慢</td><td>雲端主機在醒過來，通常 1~2 秒；已設每 8 分鐘保溫</td></tr>
-      <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/a/</code>（自架版，只有家裡網路通）</td></tr>
-      <tr><td>開出來位置怪怪的</td><td>那個地點抓不到座標，會退回用店名搜尋；先在<a href="/">網頁版</a>貼一次看結果</td></tr>
+      <tr><td>還是先開 Safari</td><td>表示捷徑還是舊的「打開 URL <code>…/a/</code>」一個動作版；照上面改成 2 個動作</td></tr>
+      <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/apple</code>（自架版，只有家裡網路通）</td></tr>
+      <tr><td>回了一段錯誤文字</td><td>那條連結查不到精確座標；刻意不亂猜位置。過幾秒再試或到<a href="/">網頁版</a>看</td></tr>
     </table>
-    <div class="dim" style="margin-top:12px">技術上：<code>/m/</code>、<code>/a/</code> 和 <code>/g/</code>
-    會把後面接的 Naver 網址轉好，再 302 轉到 Apple／Google 地圖，所以捷徑只要「打開 URL」一個動作。
-    另有回純文字網址的 <code>/apple</code>、<code>/google</code> 端點可用。</div>
+    <div class="dim" style="margin-top:12px">技術上：<code>/apple</code>、<code>/google</code>
+    回<b>一行純文字網址</b>（GET <code>?url=</code> 或 POST 純文字內文都收），
+    交給捷徑的「打開 URL」就是 universal link，直接進地圖 App。
+    <code>/a/</code>、<code>/g/</code>、<code>/m/</code> 則是把 Naver 網址接在路徑後面直接 302，
+    一個動作就好但會先經過 Safari。查不到精確座標時兩者都回 422，不會轉到亂猜的位置。</div>
   </div>
 
   <a class="back" href="/">← 回到網頁版轉換器</a>
