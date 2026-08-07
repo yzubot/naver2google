@@ -830,19 +830,21 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
         <code>maps.apple.com/…</code>。選「表單」再加同樣的
         <code>url</code> 欄位也可以，兩種都收。</span></div>
       </li>
-      <li>搜尋「<b>取得文字</b>」加進來
+      <li>搜尋「取得文字」→ 選清單裡的「<b>從輸入項目取得文字</b>」加進來
         <div class="warn" style="margin-top:8px">⚠️ <b>這一步不能省。</b>
         少了它會出現
         「<b>打開 URL 失敗，因為捷徑無法從「RTF」轉換到「URL」</b>」——
         捷徑把伺服器回的純文字認成「richtext」，而「打開 URL」只吃 URL／文字。
         「取得文字」就是把它轉回單純文字。
-        <br><span class="dim">找不到的話搜尋 <b>Get Text</b>，
-        或用「<b>URL</b>」這個動作也可以（一樣放上一步的結果）。</span></div>
+        <br><span class="dim">搜「取得文字」會跑出一串很像的
+        （從 PDF 取得文字／取代文字…），要選的是
+        「<b>從輸入項目取得文字</b>」（Get Text from Input）。
+        用「<b>URL</b>」那個動作也可以，一樣放上一步的結果。</span></div>
       </li>
       <li>再搜尋「<b>打開 URL</b>」加進來（最後一個動作）。
         欄位預設就會是上一步的結果——<b>維持原樣就對了</b>。
         <div class="dim" style="margin-top:8px">如果那格是空的，點一下它，
-        選「<b>取得文字</b>」那個變數。</div>
+        選「<b>從輸入項目取得文字</b>」那個變數。</div>
       </li>
       <li>點最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
       <li>點名稱旁的 <b>ⓘ</b> → 打開「<b>在分享表單中顯示</b>」→
@@ -885,7 +887,7 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <tr><th>狀況</th><th>怎麼辦</th></tr>
       <tr><td>捷徑沒出現在分享表單</td><td>回捷徑的 ⓘ 確認「在分享表單中顯示」有開、而且勾了 URL</td></tr>
       <tr><td>第一次比較慢</td><td>雲端主機在醒過來，通常 1~2 秒；已設每 8 分鐘保溫</td></tr>
-      <tr><td>「無法從『RTF』轉換到『URL』」</td><td>中間少了「<b>取得文字</b>」那個動作，補上就好</td></tr>
+      <tr><td>「無法從『RTF』轉換到『URL』」</td><td>中間少了「<b>從輸入項目取得文字</b>」那個動作，補上就好</td></tr>
       <tr><td>還是先開 Safari</td><td>表示捷徑還是舊的「打開 URL <code>…/a/</code>」一個動作版；照上面改成 2 個動作</td></tr>
       <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/apple</code>（自架版，只有家裡網路通）</td></tr>
       <tr><td>回了一段錯誤文字</td><td>那條連結查不到精確座標；刻意不亂猜位置。過幾秒再試或到<a href="/">網頁版</a>看</td></tr>

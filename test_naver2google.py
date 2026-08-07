@@ -170,7 +170,8 @@ def test_shortcut_guide_teaches_the_no_safari_flow():
     # 捷徑的「要求內文」只有 JSON/表單/檔案，沒有「文字」——教學不能寫錯
     assert "沒有「文字」" in body and "<code>url</code>" in body
     # 少了「取得文字」會噴 RTF→URL 轉換失敗，教學一定要教這一步
-    assert "取得文字" in body and "RTF" in body
+    # 動作全名是「從輸入項目取得文字」——只寫「取得文字」使用者會找不到
+    assert "從輸入項目取得文字" in body and "RTF" in body
 
 
 # -- /a/ /g/ 一個動作用的路徑轉址 -------------------------------------------
