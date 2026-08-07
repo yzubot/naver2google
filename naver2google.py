@@ -419,17 +419,6 @@ def _extract_url(text: str) -> str:
     return text
 
 
-def _app_scheme(apple_url: str) -> str:
-    """`https://maps.apple.com/?…` → `maps://?…`（直接叫醒「地圖」App）。
-
-    為什麼需要：iOS 的 universal link **不會**因為跨網域 302 而觸發，所以
-    「打開 URL → 我們的 /a/ → 302 到 maps.apple.com」只會停在 Safari，
-    而且 Apple 現在有網頁版地圖，會渲染成 maps.apple/p/xxxx 的網頁。
-    改丟 `maps://` 這個 App scheme，Safari 會直接把它交給「地圖」App。
-    """
-    return re.sub(r"^https://maps\.apple\.com/", "maps://", apple_url)
-
-
 _URL_TOKEN = re.compile(r"\S*(?:https?://|nmap://|naver\.me/|naver\.com/)\S*")
 
 
@@ -1032,18 +1021,20 @@ app.url_map.converters["anytext"] = _AnyTextConverter
 def api_path_redirect(rest: str):
     """把 Naver 網址直接接在路徑後面 → 302 到 Apple/Google 地圖。
 
-        /a/https://naver.me/xxxxx      → Apple 地圖（https 連結）
-        /m/https://naver.me/xxxxx      → Apple 地圖（maps:// 直接開 App）
+        /a/https://naver.me/xxxxx      → Apple 地圖
+        /m/https://naver.me/xxxxx      → 同 /a/（舊捷徑相容，見下）
         /g/naver.me/xxxxx              → Google 地圖（scheme 可省略）
 
     這樣 iOS 捷徑只要**一個動作**（打開 URL），不必 POST、不必 URL 編碼。
     注意：Safari/Werkzeug 會把連續斜線壓成一個，所以 https:/ 也要收。
+
+    `/m/` 以前會丟 `maps://?ll=…&q=…` 這個 App scheme 想「直接叫醒地圖 App」。
+    **實測是錯的**：使用者回報每個地點最後都開在 37.56649,126.98104（首爾市中心
+    的預設點）—— 也就是 App 把我們給的參數整個丟掉、停在它上次的畫面。同樣的
+    座標走 https 版（iOS Safari UA 實測）誤差只有 4m。所以 `/m/` 現在等同 `/a/`，
+    舊捷徑不用改就會自己變正確。
     """
-    if request.path.startswith("/g/"):
-        target, app_scheme = "google", False
-    else:
-        # /m/ = 直接叫醒「地圖」App（maps://），/a/ = 一般 https 連結
-        target, app_scheme = "apple", request.path.startswith("/m/")
+    target = "google" if request.path.startswith("/g/") else "apple"
     url = rest.strip()
     if request.query_string:
         url += "?" + request.query_string.decode("utf-8", "replace")
@@ -1071,37 +1062,7 @@ def api_path_redirect(rest: str):
     bail = _unverified(result)
     if bail:
         return bail
-    dest = result[f"{target}_url"]
-    if not app_scheme:
-        return redirect(dest)
-    # 不能用 302：werkzeug 會對 Location 做 iri_to_uri 正規化，把 `maps://?…`
-    # 的空 authority 砍成 `maps:?…`。改回一頁 HTML 用 JS 跳轉，字串原封不動
-    # 交給 Safari，順便留一顆按鈕給自動跳轉被擋下來的情況。
-    return Response(
-        _APP_JUMP_HTML.replace("__APP__", _app_scheme(dest)).replace("__WEB__", dest),
-        content_type="text/html; charset=utf-8")
-
-
-_APP_JUMP_HTML = """\
-<!DOCTYPE html><html lang="zh-TW"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>正在打開地圖…</title>
-<style>body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;
-color:#e2e8f0;display:flex;flex-direction:column;align-items:center;
-justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center}
-a{display:block;width:100%;max-width:320px;margin:8px 0;padding:14px;
-border-radius:10px;text-decoration:none;font-weight:700}
-.app{background:#22c55e;color:#04240f}.web{background:#1e293b;color:#e2e8f0}
-p{color:#94a3b8;font-size:.9rem;margin:0 0 18px}</style></head><body>
-<p id="msg">正在打開「地圖」App…</p>
-<a class="app" href="__APP__">打開「地圖」App</a>
-<a class="web" href="__WEB__">改用網頁版地圖</a>
-<script>
-location.href="__APP__";
-setTimeout(function(){document.getElementById('msg').textContent='沒自動跳過去的話，按下面的按鈕';},1200);
-</script>
-</body></html>
-"""
+    return redirect(result[f"{target}_url"])
 
 
 SHORTCUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shortcuts")

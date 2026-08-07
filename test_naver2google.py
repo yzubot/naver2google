@@ -308,22 +308,26 @@ def test_path_redirect_does_not_prepend_scheme_to_plain_text(monkeypatch):
     assert r.status_code == 422       # 未驗證就不轉址；重點是沒有 502(urlparse 炸掉)
 
 
-# -- /m/ App scheme（universal link 不會因跨網域 302 而觸發）----------------
-def test_app_scheme_conversion():
-    assert n._app_scheme("https://maps.apple.com/?ll=1,2&q=x") == "maps://?ll=1,2&q=x"
-    assert n._app_scheme("https://www.google.com/maps") == "https://www.google.com/maps"
-
-
-def test_m_route_serves_jump_page(monkeypatch):
-    """/m/ 不能用 302——werkzeug 會把 maps://?… 正規化成 maps:?…。
-    改回 HTML 由 JS 跳轉，字串要原封不動。"""
+# -- /m/：舊的 maps:// App scheme 已移除 -------------------------------------
+def test_m_route_redirects_like_a_route(monkeypatch):
+    """使用者實測：`maps://?ll=…&q=…` 會把參數整個丟掉，每個地點都開在
+    37.56649,126.98104（首爾預設中心）。同一組座標走 https 版誤差只有 4m。
+    所以 /m/ 現在等同 /a/ —— 舊捷徑不用改就會自己變正確。"""
     c = _client(monkeypatch)
     r = c.get("/m/https://naver.me/short")
-    assert r.status_code == 200
-    body = r.get_data(as_text=True)
-    assert 'location.href="maps://?ll=37.5,127.0' in body
-    assert "maps:?" not in body                      # 沒被砍掉 authority
-    assert 'href="https://maps.apple.com/' in body   # 網頁版備援按鈕還在
+    assert r.status_code == 302
+    loc = r.headers["Location"]
+    assert loc.startswith("https://maps.apple.com/?ll=37.5,127.0")
+    assert "maps://" not in loc
+
+
+def test_no_app_scheme_anywhere(monkeypatch):
+    """回歸守衛：別再有人「順手」把 maps:// 加回來。"""
+    assert not hasattr(n, "_app_scheme")
+    c = _client(monkeypatch)
+    for path in ("/a/", "/m/", "/g/"):
+        r = c.get(path + "https://naver.me/short")
+        assert "maps://" not in r.headers.get("Location", "")
 
 
 def test_a_route_still_plain_redirect(monkeypatch):

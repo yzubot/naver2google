@@ -133,6 +133,19 @@ Google 版把 `/m/` 換成 `/g/` 即可。
 * **「店名 + 完整地址」黏成一串，Naver 回 0 筆** — 而分享文字正是這個形狀。
   `_search_candidates()` 做階梯式退化：整段 → 只用店名 → 只用地址。
 
+### 不要用 `maps://` App scheme（實測踩過）
+
+`/m/` 以前會丟 `maps://?ll=…&q=…` 想「直接叫醒地圖 App」。**使用者實測：每一個
+地點最後都開在 37.56649,126.98104（首爾市中心預設點）** —— 地圖 App 把參數整個
+丟掉、停在它上次的畫面。同一組座標走 `https://maps.apple.com/?ll=…&q=…`
+（iOS Safari UA、WebKit 實測）誤差只有 4m，Apple 自己會轉成
+`maps.apple.com/place?coordinate=…`。
+
+所以 `/m/` 現在等同 `/a/`，舊捷徑不用改就會自己變正確。
+
+⚠️ 另一個實測：`maps.apple.com/?q=<韓文店名>`（**沒有** `ll`）從台灣打開會落在
+**台南**。這就是 `verified` 旗標存在的理由。
+
 ### verified 旗標
 
 `verified: false` = 沒人確認過這個位置（只是把文字丟去搜）。實測一個真實分享
