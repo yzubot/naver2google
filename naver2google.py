@@ -833,81 +833,67 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
 <body>
 <div class="wrap">
   <h1>在 Naver Map 按分享，直接開 Apple 地圖</h1>
-  <div class="sub">4 個動作、建一次就永久能用，而且<b>直接開「地圖」App，不經過 Safari</b>。</div>
+  <div class="sub">捷徑本身只有<b>一個動作</b>，建一次就永久能用，直接開「地圖」App。</div>
 
   <div class="card hero">
-    <span class="tag tag-a">照著做 ・ 約 2 分鐘</span>
-    <h2>建立捷徑（4 個動作，不會經過 Safari）</h2>
-    <div class="note" style="margin-bottom:12px"><b>不用設 POST／JSON／欄位。</b>
-    那些設定藏在折疊起來的「顯示更多」裡，設錯了外面看不出來——
-    改成把分享內容直接接在網址後面，就沒有隱藏設定可以設錯。</div>
-    <div class="warn" style="margin-bottom:12px">
-      <b>為什麼不是 1 個動作？</b> 只用 1 個動作（直接打開
-      <code>…/a/網址</code>）的話，iOS 是先開 <b>Safari</b> 再由網頁轉到地圖——
-      因為 <b>universal link 不會因為跨網域轉址而觸發</b>。
-      改成「先拿到最終的 <code>maps.apple.com</code> 網址、再打開它」，
-      iOS 就會<b>直接開「地圖」App</b>。<br>
-      （更早的 <code>/m/</code> 是丟 <code>maps://</code> 想硬叫醒 App，
-      <b>實測地圖 App 會把座標整個丟掉</b>，每個地點都開在首爾市中心——已經廢除。）
+    <span class="tag tag-a">照著做 ・ 6 步 ・ 約 1 分鐘</span>
+    <h2>建立捷徑（只有 1 個動作）</h2>
+    <div class="note" style="margin-bottom:12px">
+      不用 POST、不用 JSON、不用加欄位，也<b>不會經過 Safari</b>——
+      網址結尾用 <code>/m/</code>，Safari 會直接把它交給「地圖」App。
     </div>
     <ol class="steps">
       <li>打開 iPhone 內建的「<b>捷徑</b>」App → 右上角 <b>+</b></li>
-      <li>先搜尋「<b>文字</b>」→ 加一個「<b>文字</b>」動作 →
-        點它的空白欄位 → 選鍵盤上方的「<b>捷徑輸入</b>」
-        <div class="warn" style="margin-top:8px">⚠️ <b>這一步不能省。</b>
-        Naver 分享出來的其實是<b>兩筆</b>東西（店名文字 + 一組 place id 數字），
-        少了這個動作，捷徑只會送其中一筆過來，還會跳出
-        「<b>選擇一個項目</b>」要你自己選。「文字」動作會把兩筆壓成一段，
-        伺服器就能從裡面挑出 place id、拿到<b>精確座標</b>。</div>
-      </li>
-      <li>搜尋「<b>取得 URL 內容</b>」→ 點它加進來
-        <div class="warn" style="margin-top:8px">⚠️ 別選成「<b>展開 URL</b>」或
-        「<b>打開 URL</b>」——這一步要的是「<b>取得</b> URL 內容」。</div></li>
-      <li>在那格的網址欄貼上這段（<b>結尾的斜線要留著</b>）：
-        <pre id="ep">https://naver2google.onrender.com/aj/</pre>
+      <li>搜尋「<b>打開 URL</b>」→ 點<b>「打開 URL」</b>那一項
+        <div class="warn" style="margin-top:8px">⚠️ 搜尋結果裡還有一個很像的
+        「<b>展開 URL</b>」——<b>那個是錯的</b>，它只會把短網址還原成長網址。
+        要選的是「<b>打開</b> URL」。</div></li>
+      <li>畫面上會出現一格「打開 URL <span class="dim">（空白欄位）</span>」。
+        先按下面的複製鈕，再點那格空白欄位貼上：
+        <pre id="ep">https://naver2google.onrender.com/m/</pre>
         <button class="copy" onclick="cp('ep',this)">複製這段網址</button>
       </li>
       <li><b>最關鍵的一步：</b>貼完後游標會停在網址最後面，
-        <b>不要移動它</b>，直接點鍵盤<b>正上方那一排</b>裡的「<b>文字</b>」
-        （上一步那個動作的結果，<b>不是</b>「捷徑輸入」）。
-        <div class="warn" style="margin-top:8px">
-        點下去會多出一個小方塊，整格變成
-        <code>…/aj/</code><span style="color:#60a5fa">文字</span>。
-        <b>方式、要求內文那些通通不用動</b>（維持 GET）。
-        <br><span class="dim">如果那排沒看到「捷徑輸入」，往左右滑一下，
-        或先點一下網址欄位讓鍵盤出來。
-        <code>/aj/</code> 後面直接接藍色方塊——中間不能有引號或空白。</span></div>
-      </li>
-      <li>搜尋「<b>取得字典值</b>」加進來 →
-        <b>取得</b> 選「<b>值</b>」→ <b>鍵</b>打 <code>url</code>
-        <div class="warn" style="margin-top:8px">⚠️ <b>這一步不能省，而且不能用
-        「從輸入項目取得文字」代替。</b>
-        伺服器如果回純文字，捷徑會把它認成「<b>richtext</b>」，「打開 URL」就噴
-        「<b>無法從「RTF」轉換到「URL」</b>」——實測連插一個
-        「從輸入項目取得文字」都救不回來。
-        <br><span class="dim">改回 JSON 就沒這問題：捷徑對 JSON 是原生支援，
-        會自動變成字典，「取得字典值」拿出來的就是乾淨的文字。</span></div>
-      </li>
-      <li>再搜尋「<b>打開 URL</b>」加進來（最後一個動作）。
-        欄位預設就會是上一步的結果——<b>維持原樣就對了</b>。
-        <div class="dim" style="margin-top:8px">如果那格是空的，點一下它，
-        選「<b>字典值</b>」那個變數。</div>
-      </li>
-      <li>點最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
-      <li>點名稱旁的 <b>ⓘ</b> → 打開「<b>在分享表單中顯示</b>」→
-        分享表單類型要勾 <b>URL</b> <u>和</u> <b>文字</b> → 右上角<b>完成</b>
+        <b>不要移動它</b>，直接點鍵盤<b>正上方那一排</b>裡的
+        「<b>捷徑輸入</b>」。
+        <div class="dim" style="margin-top:8px">點下去會多出一個藍色小方塊，
+        整格變成 <code>…/m/</code><span style="color:#60a5fa">捷徑輸入</span>。
+        如果那排沒看到「捷徑輸入」，往左右滑一下，或先點一下欄位讓鍵盤出來。
+        <code>/m/</code> 後面直接接藍色方塊——中間<b>不能有引號、反引號或空白</b>。</div></li>
+      <li>點畫面最上面的捷徑名稱 → <b>重新命名</b> → 打「<b>用 Apple 地圖開啟</b>」</li>
+      <li>點名稱旁邊的 <b>ⓘ</b> → 把「<b>在分享表單中顯示</b>」打開 →
+        「分享表單類型」要勾 <b>URL</b> <u>和</u> <b>文字</b> → 右上角<b>完成</b>
         <div class="warn" style="margin-top:8px">⚠️ <b>「文字」一定要勾。</b>
-        Naver Map 分享出來的是一整段文字（店名＋地址＋短連結），不是單純網址——
-        只勾 URL 的話捷徑<b>根本不會出現</b>在分享表單裡。</div></li>
+        Naver Map 分享出來的是一整段文字（店名＋地址＋短連結＋一組 place id），
+        不是單純網址——<b>只勾 URL 的話捷徑根本不會出現</b>在分享表單裡。</div></li>
     </ol>
     <div class="note"><b>好了。</b>到 Naver Map 開任一地點 → <b>分享</b> →
-    找到「用 Apple 地圖開啟」→ <b>直接跳進「地圖」App</b>，不經過 Safari。<br>
-    想要 Google 版就再建一個一模一樣的，只把網址的
-    <code>/aj/</code> 改成 <code>/gj/</code>。</div>
+    往下滑找到「用 Apple 地圖開啟」→ 直接跳進「地圖」App。<br>
+    想要 Google 版就再建一個一模一樣的，只把結尾的 <code>/m/</code> 改成
+    <code>/g/</code>（Google 沒有對應的 App scheme，會走 Safari）。</div>
     <div class="warn"><b>轉不出來的時候會怎樣？</b>
-    伺服器查不到精確座標時會回一段錯誤文字（HTTP 422）而<b>不是</b>給你一個
-    亂猜的位置——因為實測「拿文字去搜」可能把你送到 1000 公里外。
-    看到錯誤就過幾秒再試一次，或到<a href="/">網頁版</a>看搜尋結果對不對。</div>
+    伺服器查不到精確座標時會回一段錯誤說明，而<b>不是</b>給你一個亂猜的位置——
+    實測「拿文字去搜」可能把你送到 1000 公里外。看到錯誤就過幾秒再試，
+    或到<a href="/">網頁版</a>貼一次看搜尋結果對不對。</div>
+  </div>
+
+  <div class="card">
+    <h2>進階：完全不想看到 Safari 閃一下</h2>
+    <p class="dim"><code>/m/</code> 是靠一頁極短的中繼頁把 <code>maps://</code>
+    交給「地圖」App，理論上你會看到 Safari 閃一下。真的很在意的話，
+    可以改成 4 個動作、全程不碰瀏覽器：</p>
+    <ol class="steps" style="margin-top:8px">
+      <li>「<b>文字</b>」→ 內容選「<b>捷徑輸入</b>」
+        <span class="dim">（Naver 一次送兩筆：文字＋place id，這步把它們壓成一段）</span></li>
+      <li>「<b>取得 URL 內容</b>」→ 網址
+        <code>https://naver2google.onrender.com/aj/</code> 後面接上一步的「<b>文字</b>」
+        <span class="dim">（方式維持 GET，其他都不用動）</span></li>
+      <li>「<b>取得字典值</b>」→ 鍵打 <code>url</code></li>
+      <li>「<b>打開 URL</b>」→ 放上一步的「字典值」</li>
+    </ol>
+    <p class="dim" style="margin-top:8px">為什麼要「取得字典值」而不是直接打開：
+    伺服器如果回純文字，捷徑會把它認成 <b>richtext</b>，「打開 URL」就噴
+    「無法從『RTF』轉換到『URL』」。走 JSON 就沒這問題。</p>
   </div>
 
   <div class="card">
@@ -935,10 +921,10 @@ hr{border:none;border-top:1px solid var(--border);margin:22px 0 18px}
       <tr><td>捷徑沒出現在分享表單</td><td>回捷徑的 ⓘ 確認「在分享表單中顯示」有開、而且勾了 URL</td></tr>
       <tr><td>第一次比較慢</td><td>雲端主機在醒過來，通常 1~2 秒；已設每 8 分鐘保溫</td></tr>
       <tr><td>「無法從『RTF』轉換到『URL』」</td><td>第一格網址要用 <code>/aj/</code>，中間要用「<b>取得字典值</b>」（鍵 <code>url</code>）。純文字回應會被捷徑當成 richtext</td></tr>
-      <tr><td>跳出「選擇一個項目」</td><td>第一格少了「<b>文字</b>」動作。Naver 一次送兩筆（文字＋place id），要先壓成一段</td></tr>
+      <tr><td>跳出「選擇一個項目」</td><td>只有進階版會遇到：第一格少了「<b>文字</b>」動作。Naver 一次送兩筆（文字＋place id），要先壓成一段</td></tr>
       <tr><td>開到「捷徑沒有成功轉換」那頁</td><td>那頁的黃色橫幅會直接寫是什麼問題，而且已經幫你轉好一份給你按</td></tr>
-      <tr><td>還是先開 Safari</td><td>表示捷徑還是舊的「打開 URL <code>…/a/</code>」一個動作版；照上面改成 2 個動作</td></tr>
-      <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/aj/</code>（自架版，只有家裡網路通）</td></tr>
+      <tr><td>停在 Safari 的網頁地圖</td><td>網址結尾要用 <code>/m/</code>（不是 <code>/a/</code>）——<code>/a/</code> 是跨網域轉址，iOS 的 universal link 不吃</td></tr>
+      <tr><td>在家 Wi-Fi 想更快</td><td>把網址換成 <code>http://192.168.50.210:8585/m/</code>（自架版，只有家裡網路通）</td></tr>
       <tr><td>回了一段錯誤文字</td><td>那條連結查不到精確座標；刻意不亂猜位置。過幾秒再試或到<a href="/">網頁版</a>看</td></tr>
     </table>
     <div class="dim" style="margin-top:12px">技術上：<code>/aj/</code>、<code>/gj/</code>
@@ -1143,6 +1129,22 @@ class _AnyTextConverter(PathConverter):
 app.url_map.converters["anytext"] = _AnyTextConverter
 
 
+def _app_scheme(apple_url: str) -> str:
+    """`https://maps.apple.com/?…` → `maps://?…`（直接叫醒「地圖」App）。
+
+    為什麼需要：iOS 的 universal link **不會**因為跨網域 302 而觸發，所以
+    「打開 URL → 我們的 /a/ → 302 到 maps.apple.com」只會停在 Safari。
+    `maps://` 這個 App scheme 會被 Safari 直接交給「地圖」App。
+
+    ⚠️ 曾經誤判：使用者回報「每個地點都開在 37.56649,126.98104」，我一度歸咎
+    於 `maps://` 把參數丟掉而把它廢除。**那是錯的** —— 那個座標正是伺服器自己
+    算出來的錯答案（place id 被拿去當關鍵字搜尋，見 convert() Step 3.5a）。
+    App scheme 一直忠實地開我們給的座標。修好座標後這條路是最好的：
+    一個動作、不經過 Safari。
+    """
+    return re.sub(r"^https://maps\.apple\.com/", "maps://", apple_url)
+
+
 def _url_from_path(rest: str) -> str:
     """Rebuild the Naver link/share text that was appended to our path."""
     url = rest.strip()
@@ -1211,7 +1213,11 @@ def api_path_redirect(rest: str):
     座標走 https 版（iOS Safari UA 實測）誤差只有 4m。所以 `/m/` 現在等同 `/a/`，
     舊捷徑不用改就會自己變正確。
     """
-    target = "google" if request.path.startswith("/g/") else "apple"
+    if request.path.startswith("/g/"):
+        target, app_scheme = "google", False
+    else:
+        # /m/ = 直接叫醒「地圖」App（maps://），/a/ = 一般 https 連結
+        target, app_scheme = "apple", request.path.startswith("/m/")
     url = _url_from_path(rest)
     try:
         result = convert(url)
@@ -1227,7 +1233,37 @@ def api_path_redirect(rest: str):
     bail = _unverified(result)
     if bail:
         return bail
-    return redirect(result[f"{target}_url"])
+    dest = result[f"{target}_url"]
+    if not app_scheme:
+        return redirect(dest)
+    # 不能用 302：werkzeug 會對 Location 做 iri_to_uri 正規化，把 `maps://?…`
+    # 的空 authority 砍成 `maps:?…`。改用一頁 HTML 由 JS 跳轉，字串原封不動
+    # 交給 Safari，順便留兩顆按鈕給自動跳轉被擋下來的情況。
+    return Response(
+        _APP_JUMP_HTML.replace("__APP__", _app_scheme(dest)).replace("__WEB__", dest),
+        content_type="text/html; charset=utf-8")
+
+
+_APP_JUMP_HTML = """\
+<!DOCTYPE html><html lang="zh-TW"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>正在打開地圖…</title>
+<style>body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;
+color:#e2e8f0;display:flex;flex-direction:column;align-items:center;
+justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center}
+a{display:block;width:100%;max-width:320px;margin:8px 0;padding:14px;
+border-radius:10px;text-decoration:none;font-weight:700}
+.app{background:#22c55e;color:#04240f}.web{background:#1e293b;color:#e2e8f0}
+p{color:#94a3b8;font-size:.9rem;margin:0 0 18px}</style></head><body>
+<p id="msg">正在打開「地圖」App…</p>
+<a class="app" href="__APP__">打開「地圖」App</a>
+<a class="web" href="__WEB__">改用網頁版地圖</a>
+<script>
+location.href="__APP__";
+setTimeout(function(){document.getElementById("msg").textContent="沒自動跳過去的話，按下面的按鈕";},1200);
+</script>
+</body></html>
+"""
 
 
 SHORTCUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shortcuts")

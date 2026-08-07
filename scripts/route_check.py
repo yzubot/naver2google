@@ -40,12 +40,12 @@ for path, want in (("/a/", "maps.apple.com"), ("/g/", "google.com/maps")):
         ok &= chk(f"{path}{variant[:34]}…", r.status_code == 302 and want in r.headers.get("Location", "")
                   and TRUTH in r.headers.get("Location", ""), f"{r.status_code} {r.headers.get('Location','')[:90]}")
 
-# /m/ 以前回一頁 maps:// 跳轉頁；實測地圖 App 會把座標丟掉，現在等同 /a/
-r = s.get(f"{B}/m/{PLACE}", allow_redirects=False, timeout=30)
-loc = r.headers.get("Location", "")
-ok &= chk("/m/ redirects like /a/ (no maps://)",
-          r.status_code == 302 and TRUTH in loc and "maps://" not in loc,
-          f"{r.status_code} {loc[:90]}")
+# /m/ 回一頁把 maps:// 交給「地圖」App 的中繼頁（一個動作、不經過 Safari）
+r = s.get(f"{B}/m/{PLACE}", timeout=30)
+ok &= chk("/m/ app-scheme jump page",
+          r.status_code == 200 and f'href="maps://?ll={TRUTH}' in r.text
+          and "maps:?" not in r.text,
+          f"{r.status_code} {r.text[:120]}")
 
 r = s.get(f"{B}/a/" + quote(SHARE, safe=""), allow_redirects=False, timeout=40)
 ok &= chk("/a/ share text", r.status_code == 302 and "ll=37.561" in r.headers.get("Location", ""),
